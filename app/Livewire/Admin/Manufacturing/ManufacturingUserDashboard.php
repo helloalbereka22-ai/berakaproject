@@ -469,42 +469,70 @@ class ManufacturingUserDashboard extends Component
         $isSuperAdmin = $user->isSuperAdmin();
         
         // Get ALL products that have manufacturing metadata
-        $items = Product::with(['category'])
-            ->get()
-            ->filter(function ($product) use ($userBranchIds, $isSuperAdmin, $user) {
-                $meta = $product->metadata ?? [];
-                
-                // Must have manufacturing_quantity > 0
-                if (!isset($meta['manufacturing_quantity']) || $meta['manufacturing_quantity'] <= 0) {
-                    return false;
+        $allProducts = Product::with(['category'])->get();
+        
+        $filtered = collect();
+        
+        foreach ($allProducts as $product) {
+            $meta = $product->metadata ?? [];
+            
+            // Must have manufacturing_quantity > 0
+            if (!isset($meta['manufacturing_quantity']) || (float)$meta['manufacturing_quantity'] <= 0) {
+                continue;
+            }
+            
+            // Super admin sees all manufactured items
+            if ($isSuperAdmin) {
+                $filtered->push($product);
+                continue;
+            }
+            
+            // For non-super-admin users, MUST have manufacturing_by_branch data
+            $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+            
+            // If no manufacturing_by_branch exists, skip entirely
+            if (empty($manufacturingByBranch)) {
+                continue;
+            }
+            
+            // Check if THIS user's branch has manufactured this product (branch-specific qty > 0)
+            $hasUserBranch = false;
+            foreach ($userBranchIds as $branchId) {
+                // Check with int key (how we now store it)
+                if (isset($manufacturingByBranch[(int)$branchId]) && (float)$manufacturingByBranch[(int)$branchId] > 0) {
+                    $hasUserBranch = true;
+                    break;
                 }
-                
-                // Super admin sees all
-                if ($isSuperAdmin) {
-                    return true;
+                // Also check string key for backwards compatibility
+                if (isset($manufacturingByBranch[(string)$branchId]) && (float)$manufacturingByBranch[(string)$branchId] > 0) {
+                    $hasUserBranch = true;
+                    break;
                 }
-                
-                // For non-super-admin users, check if this branch manufactured this product
-                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-                
-                if (!empty($manufacturingByBranch)) {
-                    // Check if user's branch has manufactured this product
-                    foreach ($userBranchIds as $branchId) {
-                        if (isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0) {
-                            return true;
-                        }
+            }
+            
+            // Only include if user's branch is in the manufacturing_by_branch data with qty > 0
+            if ($hasUserBranch) {
+                // Add branch_qty attribute to show branch-specific quantity in the table
+                $branchQtySum = 0;
+                foreach ($userBranchIds as $branchId) {
+                    if (isset($manufacturingByBranch[(int)$branchId])) {
+                        $branchQtySum += (float)$manufacturingByBranch[(int)$branchId];
+                    } elseif (isset($manufacturingByBranch[(string)$branchId])) {
+                        $branchQtySum += (float)$manufacturingByBranch[(string)$branchId];
                     }
                 }
-                
-                return false;
-            })
-            ->sortByDesc(function ($product) {
-                $meta = $product->metadata ?? [];
-                return $meta['manufacturing_added_at'] ?? now()->timestamp;
-            })
-            ->values();
+                $product->branch_qty = $branchQtySum;
+                $filtered->push($product);
+            }
+        }
+        
+        // Sort by manufacturing_added_at descending
+        $filtered = $filtered->sortByDesc(function ($product) {
+            $meta = $product->metadata ?? [];
+            return $meta['manufacturing_added_at'] ?? now()->timestamp;
+        })->values();
 
-        return $items;
+        return $filtered;
     }
 
     public function getTotalQuantityProperty(): float
@@ -797,8 +825,6 @@ class ManufacturingUserDashboard extends Component
         DB::transaction(function () use ($product, $productQty) {
             // Add manufacturing quantity to product
             $meta = $product->metadata ?? [];
-            $currentQty = isset($meta['manufacturing_quantity']) ? (float) $meta['manufacturing_quantity'] : 0;
-            $meta['manufacturing_quantity'] = $currentQty + $productQty;
             
             // Track which branches have manufactured this product
             // Store as an array of branch IDs with their quantities
@@ -806,20 +832,42 @@ class ManufacturingUserDashboard extends Component
             $branchIds = $user->assignedBranchIds();
             
             if (!empty($branchIds)) {
-                $currentBranchId = $branchIds[0];
+                // Get the user's FIRST assigned branch
+                $userBranchId = (int)$branchIds[0];
+                
+                // Verify this branch exists
+                $branch = \App\Models\Branch::find($userBranchId);
+                if (!$branch) {
+                    $this->dispatch('notify', ['type' => 'error', 'message' => 'Unable to determine your branch.']);
+                    return;
+                }
                 
                 // Initialize or get existing branch manufacturing records
                 if (!isset($meta['manufacturing_by_branch'])) {
                     $meta['manufacturing_by_branch'] = [];
                 }
                 
-                // Get current quantity for this branch
-                $branchQty = isset($meta['manufacturing_by_branch'][$currentBranchId]) 
-                    ? (float)$meta['manufacturing_by_branch'][$currentBranchId] 
+                // Ensure manufacturing_by_branch is an array
+                if (!is_array($meta['manufacturing_by_branch'])) {
+                    $meta['manufacturing_by_branch'] = [];
+                }
+                
+                // Get current quantity for this specific branch (use int key)
+                $branchQty = isset($meta['manufacturing_by_branch'][$userBranchId]) 
+                    ? (float)$meta['manufacturing_by_branch'][$userBranchId] 
                     : 0;
                 
-                // Add the new quantity
-                $meta['manufacturing_by_branch'][$currentBranchId] = $branchQty + $productQty;
+                // Add the new quantity ONLY to this branch
+                $meta['manufacturing_by_branch'][$userBranchId] = $branchQty + $productQty;
+                
+                // Recalculate manufacturing_quantity as the SUM of all branch values
+                $totalQty = 0;
+                foreach ($meta['manufacturing_by_branch'] as $qty_value) {
+                    if (is_numeric($qty_value)) {
+                        $totalQty += (float)$qty_value;
+                    }
+                }
+                $meta['manufacturing_quantity'] = $totalQty;
             }
             
             // Track daily manufactured amount (accumulate if same day, reset if new day)
@@ -913,10 +961,25 @@ class ManufacturingUserDashboard extends Component
         if (!$product) return;
 
         $meta = $product->metadata ?? [];
-        $qty = isset($meta['manufacturing_quantity']) ? $meta['manufacturing_quantity'] : 0;
+        
+        // Get the quantity for THIS user's branch (not the global manufacturing_quantity)
+        $user = auth()->user();
+        $userBranchIds = $user->assignedBranchIds();
+        $branchQty = 0;
+        
+        if (!empty($userBranchIds)) {
+            $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+            $userBranchId = (int)$userBranchIds[0];
+            
+            if (isset($manufacturingByBranch[$userBranchId])) {
+                $branchQty = (float)$manufacturingByBranch[$userBranchId];
+            } elseif (isset($manufacturingByBranch[(string)$userBranchId])) {
+                $branchQty = (float)$manufacturingByBranch[(string)$userBranchId];
+            }
+        }
 
         $this->editingProductId = $productId;
-        $this->editQuantity = (string) $qty;
+        $this->editQuantity = (string) $branchQty;
         $this->editReason = '';
         $this->showEditSalesItemModal = true;
     }
@@ -932,11 +995,37 @@ class ManufacturingUserDashboard extends Component
         if (!$product) return;
 
         $meta = $product->metadata ?? [];
+        $user = auth()->user();
+        $userBranchIds = $user->assignedBranchIds();
+        
+        // Update ONLY this branch's quantity
+        if (!empty($userBranchIds)) {
+            $userBranchId = (int)$userBranchIds[0];
+            
+            // Initialize branch structure if needed
+            if (!isset($meta['manufacturing_by_branch'])) {
+                $meta['manufacturing_by_branch'] = [];
+            }
+            
+            if (!is_array($meta['manufacturing_by_branch'])) {
+                $meta['manufacturing_by_branch'] = [];
+            }
+            
+            // Set this branch's quantity to the edited value
+            $meta['manufacturing_by_branch'][$userBranchId] = (float) $this->editQuantity;
+            
+            // Recalculate manufacturing_quantity as the SUM of all branch values
+            $totalQty = 0;
+            foreach ($meta['manufacturing_by_branch'] as $qty_value) {
+                if (is_numeric($qty_value)) {
+                    $totalQty += (float)$qty_value;
+                }
+            }
+            $meta['manufacturing_quantity'] = $totalQty;
+        }
         
         // Track if this is a new manufacturing entry (no manufacturing_added_at yet)
         $isNewEntry = !isset($meta['manufacturing_added_at']);
-        
-        $meta['manufacturing_quantity'] = (float) $this->editQuantity;
         
         // Only set manufacturing_added_at for new entries
         if ($isNewEntry) {
@@ -988,8 +1077,44 @@ class ManufacturingUserDashboard extends Component
         $product = Product::find($this->deletingProductId);
         if ($product) {
             $meta = $product->metadata ?? [];
-            $meta['manufacturing_quantity'] = 0;
-            $meta['manufacturing_added_at'] = null;
+            $user = auth()->user();
+            $userBranchIds = $user->assignedBranchIds();
+            
+            // Zero out ONLY this branch's quantity
+            if (!empty($userBranchIds)) {
+                $userBranchId = (int)$userBranchIds[0];
+                
+                // Initialize branch structure if needed
+                if (!isset($meta['manufacturing_by_branch'])) {
+                    $meta['manufacturing_by_branch'] = [];
+                }
+                
+                if (!is_array($meta['manufacturing_by_branch'])) {
+                    $meta['manufacturing_by_branch'] = [];
+                }
+                
+                // Set this branch's quantity to 0
+                $meta['manufacturing_by_branch'][$userBranchId] = 0;
+                
+                // Recalculate manufacturing_quantity as the SUM of all remaining branch values
+                $totalQty = 0;
+                foreach ($meta['manufacturing_by_branch'] as $qty_value) {
+                    if (is_numeric($qty_value)) {
+                        $totalQty += (float)$qty_value;
+                    }
+                }
+                $meta['manufacturing_quantity'] = $totalQty;
+                
+                // Only null out manufacturing_added_at if NO branch has a non-zero qty remaining
+                if ($totalQty <= 0) {
+                    $meta['manufacturing_added_at'] = null;
+                }
+            } else {
+                // Fallback for super admin or edge cases
+                $meta['manufacturing_quantity'] = 0;
+                $meta['manufacturing_added_at'] = null;
+            }
+            
             $product->metadata = $meta;
             $product->save();
         }
@@ -1382,6 +1507,112 @@ class ManufacturingUserDashboard extends Component
         $this->sellQuantity   = '';
 
         $this->dispatch('notify', ['type' => 'success', 'message' => 'Sale completed successfully']);
+    }
+
+    public function getDailyManufactured(): \Illuminate\Support\Collection
+    {
+        $user = auth()->user();
+        $today = now()->toDateString();
+
+        // Get user's assigned branch IDs (not super admin)
+        $userBranchIds = $user->isSuperAdmin()
+            ? []
+            : $user->assignedBranchIds();
+
+        // Query all products with manufacturing metadata
+        $products = Product::with('category')
+            ->where(function ($q) {
+                // Look for products with manufacturing metadata
+                $q->whereNotNull('metadata')
+                  ->where('metadata', '!=', '{}');
+            })
+            ->get();
+
+        $filtered = $products->filter(function ($product) use ($userBranchIds, $today) {
+            $meta = $product->metadata ?? [];
+            
+            // Must have manufacturing_quantity to be considered manufactured
+            if (!isset($meta['manufacturing_quantity']) || (float)$meta['manufacturing_quantity'] <= 0) {
+                return false;
+            }
+
+            // Must have manufacturing_added_at set
+            if (!isset($meta['manufacturing_added_at'])) {
+                return false;
+            }
+
+            // Check if manufacturing_added_at is today
+            try {
+                $addedDate = \Carbon\Carbon::parse($meta['manufacturing_added_at'])->toDateString();
+                if ($addedDate !== $today) {
+                    return false;
+                }
+            } catch (\Exception $e) {
+                return false;
+            }
+
+            // Check if user's branch has manufactured this product
+            if (!empty($userBranchIds)) {
+                $branchData = $meta['manufacturing_by_branch'] ?? [];
+                if (empty($branchData)) {
+                    return false;
+                }
+
+                // Check if any of user's branches are in the manufacturing_by_branch data
+                foreach ($userBranchIds as $branchId) {
+                    if (isset($branchData[$branchId]) && (float)$branchData[$branchId] > 0) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            // Super admin sees all products manufactured today
+            return true;
+        })->map(function ($product) use ($userBranchIds) {
+            $meta = $product->metadata ?? [];
+            
+            // Sum quantity from manufacturing_by_branch for this user's branches
+            $branchData = $meta['manufacturing_by_branch'] ?? [];
+            $qty = 0;
+            $seedQty = 0;
+
+            if (!empty($userBranchIds)) {
+                foreach ($userBranchIds as $branchId) {
+                    if (isset($branchData[$branchId])) {
+                        $qty += (float) ($branchData[$branchId] ?? 0);
+                    }
+                }
+                $seedQty = (float) ($meta['seed_quantity_used'] ?? 0);
+            } else {
+                // Super admin: sum all branch quantities
+                foreach ($branchData as $qty_value) {
+                    if (is_numeric($qty_value)) {
+                        $qty += (float) $qty_value;
+                    }
+                }
+                $seedQty = (float) ($meta['seed_quantity_used'] ?? 0);
+            }
+
+            return (object) [
+                'item_name'     => $product->name,
+                'category'      => optional($product->category)->name,
+                'quantity'      => $qty,  // Use only branch-specific qty, never fall back to manufacturing_daily_qty
+                'seed_qty_used' => $seedQty,
+                'selling_price' => (float) ($product->selling_price ?? 0),
+                'date_added'    => $meta['manufacturing_added_at'] ?? now()->toIso8601String(),
+            ];
+        })->values();
+
+        return $filtered;
+    }
+
+    public function __get($name)
+    {
+        if ($name === 'dailyManufactured') {
+            return $this->getDailyManufactured();
+        }
+        return parent::__get($name);
     }
 
     public function render()
