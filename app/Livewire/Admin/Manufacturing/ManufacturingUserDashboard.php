@@ -1449,13 +1449,37 @@ class ManufacturingUserDashboard extends Component
                         }
                     }
                 } else {
-                    // Deduct from metadata manufacturing_quantity if present
+                    // Deduct from metadata manufacturing_by_branch for THIS branch only
                     $metadata = $product->metadata ?? [];
-                    $mfrQty   = (float) ($metadata['manufacturing_quantity'] ?? 0);
-                    if ($mfrQty > 0) {
-                        $metadata['manufacturing_quantity'] = max(0, $mfrQty - $sellQty);
-                        $product->metadata = $metadata;
-                        $product->save();
+                    
+                    if (!empty($branchId) && !empty($metadata['manufacturing_by_branch'])) {
+                        $manufacturingByBranch = $metadata['manufacturing_by_branch'];
+                        
+                        // Get current quantity for this branch (check both int and string keys for backwards compatibility)
+                        $currentBranchQty = 0;
+                        if (isset($manufacturingByBranch[(int)$branchId])) {
+                            $currentBranchQty = (float)$manufacturingByBranch[(int)$branchId];
+                        } elseif (isset($manufacturingByBranch[(string)$branchId])) {
+                            $currentBranchQty = (float)$manufacturingByBranch[(string)$branchId];
+                        }
+                        
+                        // Deduct only from this branch
+                        if ($currentBranchQty > 0) {
+                            $manufacturingByBranch[(int)$branchId] = max(0, $currentBranchQty - $sellQty);
+                            
+                            // Recalculate manufacturing_quantity as the sum of all branch values
+                            $totalQty = 0;
+                            foreach ($manufacturingByBranch as $qty_value) {
+                                if (is_numeric($qty_value)) {
+                                    $totalQty += (float)$qty_value;
+                                }
+                            }
+                            $metadata['manufacturing_quantity'] = $totalQty;
+                            $metadata['manufacturing_by_branch'] = $manufacturingByBranch;
+                            
+                            $product->metadata = $metadata;
+                            $product->save();
+                        }
                     }
                 }
 
