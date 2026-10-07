@@ -230,7 +230,7 @@ class ManufacturingUserDashboard extends Component
                             ->when(!empty($filterBusinessId), function($q) use ($filterBusinessId) {
                                 return $q->where('business_id', $filterBusinessId);
                             })
-                            ->when(!$isSuperAdmin && !empty($filterBranchId), function($q) use ($filterBranchId) {
+                            ->when(!empty($filterBranchId), function($q) use ($filterBranchId) {
                                 return $q->where('branch_id', $filterBranchId);
                             })
                             ->sum(DB::raw("CASE WHEN direction = 'in' THEN quantity ELSE -quantity END"));
@@ -254,7 +254,7 @@ class ManufacturingUserDashboard extends Component
                 ->when(!empty($filterBusinessId), function($q) use ($filterBusinessId) {
                     return $q->where('business_id', $filterBusinessId);
                 })
-                ->when(!$isSuperAdmin && !empty($filterBranchId), function($q) use ($filterBranchId) {
+                ->when(!empty($filterBranchId), function($q) use ($filterBranchId) {
                     return $q->where('branch_id', $filterBranchId);
                 })
                 ->sum(DB::raw("CASE WHEN direction = 'in' THEN quantity ELSE -quantity END"));
@@ -373,7 +373,7 @@ class ManufacturingUserDashboard extends Component
                 ->when(!empty($filterBusinessId), function($q) use ($filterBusinessId) {
                     return $q->where('business_id', $filterBusinessId);
                 })
-                ->when(!$isSuperAdmin && !empty($filterBranchId), function($q) use ($filterBranchId) {
+                ->when(!empty($filterBranchId), function($q) use ($filterBranchId) {
                     return $q->where('branch_id', $filterBranchId);
                 })
                 ->sum(DB::raw("CASE WHEN direction = 'in' THEN quantity ELSE -quantity END"));
@@ -383,7 +383,7 @@ class ManufacturingUserDashboard extends Component
                     $q->when(!empty($filterBusinessId), function($qb) use ($filterBusinessId) {
                         return $qb->where('business_id', $filterBusinessId);
                     })
-                    ->when(!$isSuperAdmin && !empty($filterBranchId), function($qb) use ($filterBranchId) {
+                    ->when(!empty($filterBranchId), function($qb) use ($filterBranchId) {
                         return $qb->where('branch_id', $filterBranchId);
                     });
                 })
@@ -451,7 +451,7 @@ class ManufacturingUserDashboard extends Component
                 ->when(!empty($filterBusinessId), function($q) use ($filterBusinessId) {
                     return $q->where('business_id', $filterBusinessId);
                 })
-                ->when(!$isSuperAdmin && !empty($filterBranchId), function($q) use ($filterBranchId) {
+                ->when(!empty($filterBranchId), function($q) use ($filterBranchId) {
                     return $q->where('branch_id', $filterBranchId);
                 })
                 ->sum(DB::raw("CASE WHEN direction = 'in' THEN quantity ELSE -quantity END"));

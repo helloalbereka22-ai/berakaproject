@@ -1,0 +1,18 @@
+{
+  "verdict": "NEEDS_CHANGES",
+  "findings": [
+    {
+      "label": "Dropdown filter mismatch: categories() does not apply stock filters",
+      "issue": "The categories() raw balance query sums all direction-signed movements without applying AVAILABLE_QTY_EXCLUDED_INBOUND / AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND filters. A product with consumption ledger entries (production_consumption) would fail the balance > 0 check in the dropdown even though getSourceBalance() would correctly show it has available qty > 0. Apply the same filter constants to the categories() balance query at lines 207–214."
+    },
+    {
+      "label": "Products with only metadata are invisible in transfer dropdowns",
+      "issue": "Products recorded only in metadata (no StockMovement records) will not appear in ProductTransfer dropdowns because categories() queries StockMovement balance only. The metadata-to-movement conversion only happens during executeTransfer() (lines 289–306), after the dropdown is rendered. Products in legacy metadata remain invisible until first transferred. Require either an explicit migration job to convert legacy metadata to movements, or restore metadata checks in categories() / products() for backwards compatibility."
+    },
+    {
+      "label": "Issue #3 verified as not a concern",
+      "issue": "ManufacturingUserDashboard's purchase-type path uses Purchase.quantity for both dropdown filtering and available qty calculation — confirmed consistent, no fix needed."
+    }
+  ],
+  "reviewDoc": "c:\\xammpp82\\htdocs\\albarekaaaaaa\\.agents\\tasks\\qty-mismatch-review.md"
+}

@@ -1,0 +1,7 @@
+<?php
+define('LARAVEL_START', microtime(true));
+require __DIR__.'/../vendor/autoload.php';
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make('Illuminate\Contracts\Console\Kernel')->bootstrap();
+$cols = DB::getSchemaBuilder()->getColumnListing('media_files');
+echo "media_files columns: " . implode(', ', $cols);

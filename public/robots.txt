@@ -1,0 +1,28 @@
+# Al-Baraka Store Robots.txt
+# Allow search engines to crawl public pages
+
+User-agent: *
+Allow: /
+Allow: /store
+Allow: /store/products
+Allow: /store/product/*
+Allow: /manufacturing
+
+# Disallow admin and backend
+Disallow: /admin
+Disallow: /api
+Disallow: /livewire
+Disallow: /*.php$
+Disallow: /config
+Disallow: /storage
+
+# Allow specific crawlers
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+# Sitemap location
+Sitemap: http://localhost/albarekaaaaaa/public/sitemap.xml
+Crawl-delay: 1
