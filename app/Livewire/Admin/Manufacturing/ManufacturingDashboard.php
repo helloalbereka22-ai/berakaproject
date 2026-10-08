@@ -238,6 +238,7 @@ class ManufacturingDashboard extends Component
         $today    = now()->toDateString();
         $user     = auth()->user();
         $bizIds   = $user->isSuperAdmin() ? null : $user->assignedBusinessIds();
+        $branchIds = $user->isSuperAdmin() ? null : $user->assignedBranchIds();
 
         // 1. Total Products — products with manufacturing_quantity > 0 in metadata
         $totalProducts = \App\Models\Product::withoutGlobalScopes()
@@ -249,12 +250,18 @@ class ManufacturingDashboard extends Component
             ->filter(fn($p) => (float)(($p->metadata ?? [])['manufacturing_quantity'] ?? 0) > 0)
             ->count();
 
-        // 2. Today's Total Selling Price — sum of branch_sales.total_amount for today
-        $todaySelling = \App\Models\BranchSale::withoutGlobalScopes()
+        // 2. Today's Total Selling Price — sum of branch_sales.total_amount for today, filtered by user's branch
+        $todaySalesQuery = \App\Models\BranchSale::withoutGlobalScopes()
             ->where('sale_date', $today)
             ->when($bizId, fn($q) => $q->whereHas('branch', fn($b) => $b->where('business_id', $bizId)))
-            ->when($bizIds, fn($q) => $q->whereHas('branch', fn($b) => $b->whereIn('business_id', $bizIds)))
-            ->sum('total_amount');
+            ->when($bizIds, fn($q) => $q->whereHas('branch', fn($b) => $b->whereIn('business_id', $bizIds)));
+
+        // If user has branch restrictions, filter by their branches
+        if ($branchIds && !$user->isSuperAdmin()) {
+            $todaySalesQuery = $todaySalesQuery->whereIn('branch_id', $branchIds);
+        }
+
+        $todaySelling = $todaySalesQuery->sum('total_amount');
 
         // 3. Total Raw Materials — sum of available qty across all raw material Purchase records
         $totalRawMaterials = \App\Models\Purchase::withoutGlobalScopes()
@@ -263,6 +270,7 @@ class ManufacturingDashboard extends Component
             ->where('quantity', '>', 0)
             ->when($bizId,  fn($q) => $q->where('business_id', $bizId))
             ->when($bizIds, fn($q) => $q->whereIn('business_id', $bizIds))
+            ->when($branchIds && !$user->isSuperAdmin(), fn($q) => $q->whereIn('branch_id', $branchIds))
             ->sum('quantity');
 
         // 4. Total Used Raw Materials — sum of seed_quantity_used stored in product metadata
@@ -270,6 +278,7 @@ class ManufacturingDashboard extends Component
             ->whereNotNull('metadata')
             ->when($bizId,  fn($q) => $q->where('business_id', $bizId))
             ->when($bizIds, fn($q) => $q->whereIn('business_id', $bizIds))
+            ->when($branchIds && !$user->isSuperAdmin(), fn($q) => $q->whereIn('branch_id', $branchIds))
             ->get()
             ->sum(fn($p) => (float)(($p->metadata ?? [])['seed_quantity_used'] ?? 0));
 
@@ -324,19 +333,11 @@ class ManufacturingDashboard extends Component
         $query = \App\Models\Product::query()
             ->with(['category', 'business'])
             ->whereIn('business_id', $businessIds)
-            ->whereIn('type', ['finished_product', 'bottle_product'])
             ->where('status', 'active')
             ->whereNotNull('metadata');
-        
-        // If user has branch restrictions, filter by branch through stock_movements
-        if ($branchIds && !$user->isSuperAdmin()) {
-            $query->whereHas('stockMovements', function($q) use ($branchIds) {
-                $q->whereIn('branch_id', $branchIds);
-            }, '>=', 1);
-        }
 
         $items = $query->get()
-            ->filter(function ($product) use ($today) {
+            ->filter(function ($product) use ($today, $branchIds, $user) {
                 $meta = $product->metadata ?? [];
                 
                 // Check if product has manufacturing_added_at timestamp
@@ -348,11 +349,31 @@ class ManufacturingDashboard extends Component
                     // Parse ISO8601 string or timestamp
                     $addedDate = \Carbon\Carbon::parse($meta['manufacturing_added_at'])->toDateString();
                     
-                    // If added today, include it
+                    // If added today, check quantity
                     if ($addedDate === $today) {
-                        // Use manufacturing_daily_qty if available, otherwise use manufacturing_quantity
                         $qty = (float)($meta['manufacturing_daily_qty'] ?? $meta['manufacturing_quantity'] ?? 0);
-                        return $qty > 0;
+                        if ($qty <= 0) {
+                            return false;
+                        }
+
+                        // If user has branch restrictions, check if their branch manufactured this
+                        if ($branchIds && !$user->isSuperAdmin()) {
+                            $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                            if (empty($manufacturingByBranch)) {
+                                return false;
+                            }
+
+                            // Check if any of the user's branches are in the manufacturing_by_branch
+                            foreach ($branchIds as $branchId) {
+                                if (isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0) {
+                                    return true;
+                                }
+                            }
+                            return false;
+                        }
+
+                        // Super admin or no branch restrictions
+                        return true;
                     }
                 } catch (\Exception $e) {
                     return false;
