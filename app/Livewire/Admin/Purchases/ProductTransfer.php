@@ -373,16 +373,6 @@ class ProductTransfer extends Component
                     $product->metadata = $meta;
                     $product->save();
                 }
-
-                $inventory->recordMovement(
-                    $srcLocation->id,
-                    'product',
-                    $product->id,
-                    StockMovement::TYPE_TRANSFER_OUT,
-                    $qty,
-                    (float) ($product->cost_price ?? 0),
-                    ['reference_type' => 'transfer', 'notes' => "from_branch:{$srcBranch->name}|to_branch:{$destBranch->name}|notes:" . trim($this->trNotes)]
-                );
             }
 
             // ── Add to destination branch ─────────────────────────────────
@@ -420,26 +410,25 @@ class ProductTransfer extends Component
                 ]);
             }
 
-            if ($destLocation) {
-                $inventory->receivePurchase(
+            // Record proper TRANSFER_OUT + TRANSFER_IN movements via InventoryService::transfer()
+            if ($srcLocation && $destLocation) {
+                $transferNotes = "from_branch:{$srcBranch->name}|to_branch:{$destBranch->name}|notes:" . trim($this->trNotes);
+                $inventory->transfer(
+                    $srcLocation->id,
                     $destLocation->id,
+                    'product',
                     $product->id,
                     $qty,
-                    (float) ($product->cost_price ?? 0),
-                    $purchase->id,
-                    'transfer'
+                    $transferNotes
                 );
-                // Update the notes on the transfer-in movement to include from_branch
-                \Illuminate\Support\Facades\DB::table('stock_movements')
-                    ->where('location_id', $destLocation->id)
-                    ->where('item_id', $product->id)
-                    ->where('direction', 'in')
-                    ->where('reference_type', 'transfer')
-                    ->orderByDesc('id')
-                    ->limit(1)
-                    ->update([
-                        'notes' => "from_branch:{$srcBranch->name}|to_branch:{$destBranch->name}|notes:" . trim($this->trNotes)
-                    ]);
+            } elseif ($srcLocation) {
+                // Destination has no location yet — fall back to just recording the outbound
+                $inventory->recordMovement(
+                    $srcLocation->id, 'product', $product->id,
+                    StockMovement::TYPE_TRANSFER_OUT, $qty,
+                    (float) ($product->cost_price ?? 0),
+                    ['reference_type' => 'transfer', 'notes' => "from_branch:{$srcBranch->name}|to_branch:{$destBranch->name}|notes:" . trim($this->trNotes)]
+                );
             }
 
             // Preserve selling price
