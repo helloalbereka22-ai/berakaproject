@@ -51,6 +51,8 @@ class ManufacturingUserDashboard extends Component
     // Filters
     public string $filterBusinessId = '';
     public string $filterBranchId   = ''; // resolved from user's branch assignment
+    public string $filterFromDate   = '';
+    public string $filterToDate     = '';
 
     public function mount(): void
     {
@@ -64,20 +66,26 @@ class ManufacturingUserDashboard extends Component
         
         // Determine the user's business and branch
         if (!$user->isSuperAdmin()) {
-            $ids = $user->assignedBusinessIds();
-            if (count($ids) === 1) {
-                $this->filterBusinessId = (string) $ids[0];
-
-                // Resolve the manufacturer's branch (use user's actually assigned branch, not first branch)
-                $userBranchIds = $user->assignedBranchIds();
-                if (!empty($userBranchIds)) {
-                    $this->filterBranchId = (string) $userBranchIds[0];
-                    // Also resolve filterBusinessId from this branch if not set
-                    if (empty($this->filterBusinessId)) {
-                        $branch = Branch::find($userBranchIds[0]);
-                        if ($branch) {
-                            $this->filterBusinessId = (string) $branch->business_id;
-                        }
+            // Get user's assigned branches (more reliable than businesses for manufacturers)
+            $userBranchIds = $user->assignedBranchIds();
+            if (!empty($userBranchIds)) {
+                // Use user's first assigned branch
+                $this->filterBranchId = (string) $userBranchIds[0];
+                
+                // Get the business_id from that branch
+                $branch = Branch::find($userBranchIds[0]);
+                if ($branch) {
+                    $this->filterBusinessId = (string) $branch->business_id;
+                }
+            } else {
+                // Fallback to first business if no branches assigned
+                $ids = $user->assignedBusinessIds();
+                if (!empty($ids)) {
+                    $this->filterBusinessId = (string) $ids[0];
+                    // Try to find a branch for this business
+                    $branch = Branch::where('business_id', $ids[0])->first();
+                    if ($branch) {
+                        $this->filterBranchId = (string) $branch->id;
                     }
                 }
             }
@@ -96,6 +104,10 @@ class ManufacturingUserDashboard extends Component
                 }
             }
         }
+        
+        // Initialize date filters to today
+        $this->filterFromDate = now()->toDateString();
+        $this->filterToDate = now()->toDateString();
     }
 
     // Allow switching to sell mode without a full page reload
@@ -159,7 +171,7 @@ class ManufacturingUserDashboard extends Component
 
     // Get bottle products (filtered by exact size match from selected product)
     #[Computed]
-    public function bottleProducts(): \Illuminate\Database\Eloquent\Collection
+    public function bottleProducts(): \Illuminate\Support\Collection
     {
         $user = auth()->user();
         $userBranchIds = $user->assignedBranchIds();
@@ -398,7 +410,7 @@ class ManufacturingUserDashboard extends Component
 
     // Get packing material products (meshagiya items and packing materials)
     #[Computed]
-    public function packingProducts(): \Illuminate\Database\Eloquent\Collection
+    public function packingProducts(): \Illuminate\Support\Collection
     {
         $user = auth()->user();
         $userBranchIds = $user->assignedBranchIds();
@@ -468,6 +480,10 @@ class ManufacturingUserDashboard extends Component
         $userBranchIds = $user->assignedBranchIds();
         $isSuperAdmin = $user->isSuperAdmin();
         
+        // Parse date filters
+        $fromDate = !empty($this->filterFromDate) ? \Carbon\Carbon::parse($this->filterFromDate)->startOfDay() : null;
+        $toDate = !empty($this->filterToDate) ? \Carbon\Carbon::parse($this->filterToDate)->endOfDay() : null;
+        
         // Get ALL products that have manufacturing metadata
         $allProducts = Product::with(['category'])->get();
         
@@ -481,49 +497,55 @@ class ManufacturingUserDashboard extends Component
                 continue;
             }
             
+            // Check date filter
+            if ($fromDate || $toDate) {
+                $manufacturingDate = isset($meta['manufacturing_added_at']) 
+                    ? \Carbon\Carbon::parse($meta['manufacturing_added_at'])
+                    : null;
+                
+                if (!$manufacturingDate) {
+                    continue; // Skip if no date
+                }
+                
+                // Filter by date range
+                if ($fromDate && $manufacturingDate->lt($fromDate)) {
+                    continue; // Before from date
+                }
+                if ($toDate && $manufacturingDate->gt($toDate)) {
+                    continue; // After to date
+                }
+            }
+            
+            // For non-super-admin users: ONLY show items MANUFACTURED BY THEIR BRANCH
             // Super admin sees all manufactured items
-            if ($isSuperAdmin) {
-                $filtered->push($product);
-                continue;
-            }
-            
-            // For non-super-admin users, MUST have manufacturing_by_branch data
-            $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-            
-            // If no manufacturing_by_branch exists, skip entirely
-            if (empty($manufacturingByBranch)) {
-                continue;
-            }
-            
-            // Check if THIS user's branch has manufactured this product (branch-specific qty > 0)
-            $hasUserBranch = false;
-            foreach ($userBranchIds as $branchId) {
-                // Check with int key (how we now store it)
-                if (isset($manufacturingByBranch[(int)$branchId]) && (float)$manufacturingByBranch[(int)$branchId] > 0) {
-                    $hasUserBranch = true;
-                    break;
+            if (!$isSuperAdmin) {
+                $manufacturingByBranchId = isset($meta['manufactured_by_branch_id']) ? (int)$meta['manufactured_by_branch_id'] : null;
+                
+                if (!$manufacturingByBranchId) {
+                    // No manufacturing_by_branch_id data = skip entirely
+                    continue;
                 }
-                // Also check string key for backwards compatibility
-                if (isset($manufacturingByBranch[(string)$branchId]) && (float)$manufacturingByBranch[(string)$branchId] > 0) {
-                    $hasUserBranch = true;
-                    break;
-                }
-            }
-            
-            // Only include if user's branch is in the manufacturing_by_branch data with qty > 0
-            if ($hasUserBranch) {
-                // Add branch_qty attribute to show branch-specific quantity in the table
-                $branchQtySum = 0;
+                
+                // Check if THIS ITEM was manufactured by user's branch
+                $shouldInclude = false;
+                
                 foreach ($userBranchIds as $branchId) {
-                    if (isset($manufacturingByBranch[(int)$branchId])) {
-                        $branchQtySum += (float)$manufacturingByBranch[(int)$branchId];
-                    } elseif (isset($manufacturingByBranch[(string)$branchId])) {
-                        $branchQtySum += (float)$manufacturingByBranch[(string)$branchId];
+                    $branchIdInt = (int)$branchId;
+                    
+                    // Item must be manufactured by THIS specific branch
+                    if ($manufacturingByBranchId === $branchIdInt) {
+                        $shouldInclude = true;
+                        break;
                     }
                 }
-                $product->branch_qty = $branchQtySum;
-                $filtered->push($product);
+                
+                // If item was NOT manufactured by user's branch, SKIP it
+                if (!$shouldInclude) {
+                    continue;
+                }
             }
+            
+            $filtered->push($product);
         }
         
         // Sort by manufacturing_added_at descending
@@ -684,9 +706,48 @@ class ManufacturingUserDashboard extends Component
     private function deductRawMaterial(int $productId, float $quantity): void
     {
         // Record StockMovement deduction (outbound production consumption)
-        // Always use the user's assigned business and branch, not the location's
-        $branchId = !empty($this->filterBranchId) ? (int)$this->filterBranchId : null;
-        $businessId = !empty($this->filterBusinessId) ? (int)$this->filterBusinessId : null;
+        // Get user's business and branch context if not set in $this
+        $branchId = null;
+        $businessId = null;
+        
+        // Try to use $this->filterBranchId and $this->filterBusinessId first
+        if (!empty($this->filterBranchId)) {
+            $branchId = (int)$this->filterBranchId;
+            $businessId = !empty($this->filterBusinessId) ? (int)$this->filterBusinessId : null;
+        } else {
+            // Fallback: get user's assigned branch directly
+            $user = auth()->user();
+            if ($user && !$user->isSuperAdmin()) {
+                $userBranchIds = $user->assignedBranchIds();
+                if (!empty($userBranchIds)) {
+                    $branchId = (int)$userBranchIds[0];
+                    $branch = Branch::find($branchId);
+                    if ($branch) {
+                        $businessId = (int)$branch->business_id;
+                    }
+                } else {
+                    // Try assigned businesses
+                    $userBusinessIds = $user->assignedBusinessIds();
+                    if (!empty($userBusinessIds)) {
+                        $businessId = (int)$userBusinessIds[0];
+                        $branch = Branch::where('business_id', $businessId)->first();
+                        if ($branch) {
+                            $branchId = (int)$branch->id;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Log for debugging
+        \Log::debug('deductRawMaterial', [
+            'filterBranchId' => $this->filterBranchId ?? 'null',
+            'filterBusinessId' => $this->filterBusinessId ?? 'null',
+            'resolvedBranchId' => $branchId,
+            'resolvedBusinessId' => $businessId,
+            'productId' => $productId,
+            'quantity' => $quantity,
+        ]);
         
         // Get location for this branch
         $location = null;
@@ -699,58 +760,179 @@ class ManufacturingUserDashboard extends Component
             $location = Location::first();
         }
 
-        if ($location && $businessId && $branchId) {
-            $rawProduct = Product::find($productId);
-            $effectiveUnitCost = (float) ($rawProduct?->cost_price ?? 0);
-            
-            // Calculate balance after deduction using the SAME business_id and branch_id we're filtering by
-            $currentStock = (float) StockMovement::where('item_type', 'product')
-                ->where('item_id', $productId)
-                ->where('business_id', $businessId)
-                ->where('branch_id', $branchId)
-                ->sum(DB::raw("CASE WHEN direction = 'in' THEN quantity ELSE -quantity END"));
-            $newBalance = max(0, $currentStock - $quantity);
-
-            StockMovement::create([
-                'business_id'    => $businessId,
-                'branch_id'      => $branchId,
-                'location_id'    => $location->id,
-                'item_type'      => 'product',
-                'item_id'        => $productId,
-                'movement_type'  => StockMovement::TYPE_PRODUCTION_CONSUMPTION,
-                'direction'      => 'out',
-                'quantity'       => $quantity,
-                'unit_cost'      => $effectiveUnitCost,
-                'total_cost'     => round($quantity * $effectiveUnitCost, 4),
-                'balance_after'  => $newBalance,
-                'reference_type' => 'production_deduction',
-                'notes'          => 'Raw material deduction for manufactured product',
-                'created_by'     => auth()->id(),
-                'moved_at'       => now(),
-            ]);
+        if (!$location) {
+            \Log::warning('No location found for branch deduction', ['branchId' => $branchId]);
+            return;
         }
+
+        if (!$businessId || !$branchId) {
+            \Log::warning('Missing business or branch context for deduction', [
+                'businessId' => $businessId,
+                'branchId' => $branchId,
+            ]);
+            return;
+        }
+
+        $rawProduct = Product::find($productId);
+        $effectiveUnitCost = (float) ($rawProduct?->cost_price ?? 0);
+        
+        // Calculate balance after deduction using the SAME business_id and branch_id we're filtering by
+        $currentStock = (float) StockMovement::where('item_type', 'product')
+            ->where('item_id', $productId)
+            ->where('business_id', $businessId)
+            ->where('branch_id', $branchId)
+            ->sum(DB::raw("CASE WHEN direction = 'in' THEN quantity ELSE -quantity END"));
+        $newBalance = max(0, $currentStock - $quantity);
+
+        StockMovement::create([
+            'business_id'    => $businessId,
+            'branch_id'      => $branchId,
+            'location_id'    => $location->id,
+            'item_type'      => 'product',
+            'item_id'        => $productId,
+            'movement_type'  => StockMovement::TYPE_PRODUCTION_CONSUMPTION,
+            'direction'      => 'out',
+            'quantity'       => $quantity,
+            'unit_cost'      => $effectiveUnitCost,
+            'total_cost'     => round($quantity * $effectiveUnitCost, 4),
+            'balance_after'  => $newBalance,
+            'reference_type' => 'production_deduction',
+            'notes'          => 'Raw material deduction for manufactured product',
+            'created_by'     => auth()->id(),
+            'moved_at'       => now(),
+        ]);
+    }
+    
+    private function restoreRawMaterial(int $productId, float $quantity): void
+    {
+        // Restore raw material (reverse of deduction) - inbound production restoration
+        // Get user's business and branch context if not set in $this
+        $branchId = null;
+        $businessId = null;
+        
+        // Try to use $this->filterBranchId and $this->filterBusinessId first
+        if (!empty($this->filterBranchId)) {
+            $branchId = (int)$this->filterBranchId;
+            $businessId = !empty($this->filterBusinessId) ? (int)$this->filterBusinessId : null;
+        } else {
+            // Fallback: get user's assigned branch directly
+            $user = auth()->user();
+            if ($user && !$user->isSuperAdmin()) {
+                $userBranchIds = $user->assignedBranchIds();
+                if (!empty($userBranchIds)) {
+                    $branchId = (int)$userBranchIds[0];
+                    $branch = Branch::find($branchId);
+                    if ($branch) {
+                        $businessId = (int)$branch->business_id;
+                    }
+                } else {
+                    // Try assigned businesses
+                    $userBusinessIds = $user->assignedBusinessIds();
+                    if (!empty($userBusinessIds)) {
+                        $businessId = (int)$userBusinessIds[0];
+                        $branch = Branch::where('business_id', $businessId)->first();
+                        if ($branch) {
+                            $branchId = (int)$branch->id;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Log for debugging
+        \Log::debug('restoreRawMaterial', [
+            'filterBranchId' => $this->filterBranchId ?? 'null',
+            'filterBusinessId' => $this->filterBusinessId ?? 'null',
+            'resolvedBranchId' => $branchId,
+            'resolvedBusinessId' => $businessId,
+            'productId' => $productId,
+            'quantity' => $quantity,
+        ]);
+        
+        // Get location for this branch
+        $location = null;
+        if ($branchId) {
+            $location = Location::where('branch_id', $branchId)->first();
+        }
+        
+        // Fallback to first available location
+        if (!$location) {
+            $location = Location::first();
+        }
+
+        if (!$location) {
+            \Log::warning('No location found for branch restoration', ['branchId' => $branchId]);
+            return;
+        }
+
+        if (!$businessId || !$branchId) {
+            \Log::warning('Missing business or branch context for restoration', [
+                'businessId' => $businessId,
+                'branchId' => $branchId,
+            ]);
+            return;
+        }
+
+        $rawProduct = Product::find($productId);
+        $effectiveUnitCost = (float) ($rawProduct?->cost_price ?? 0);
+        
+        // Calculate balance after restoration
+        $currentStock = (float) StockMovement::where('item_type', 'product')
+            ->where('item_id', $productId)
+            ->where('business_id', $businessId)
+            ->where('branch_id', $branchId)
+            ->sum(DB::raw("CASE WHEN direction = 'in' THEN quantity ELSE -quantity END"));
+        $newBalance = $currentStock + $quantity;
+
+        StockMovement::create([
+            'business_id'    => $businessId,
+            'branch_id'      => $branchId,
+            'location_id'    => $location->id,
+            'item_type'      => 'product',
+            'item_id'        => $productId,
+            'movement_type'  => StockMovement::TYPE_PRODUCTION_CONSUMPTION,
+            'direction'      => 'in',
+            'quantity'       => $quantity,
+            'unit_cost'      => $effectiveUnitCost,
+            'total_cost'     => round($quantity * $effectiveUnitCost, 4),
+            'balance_after'  => $newBalance,
+            'reference_type' => 'production_restoration',
+            'notes'          => 'Raw material restoration from deleted manufactured product',
+            'created_by'     => auth()->id(),
+            'moved_at'       => now(),
+        ]);
     }
 
     // Actions
     public function addSalesItem(): void
     {
-        $this->validate([
-            'salesCategoryId' => 'required|integer|exists:categories,id',
-            'salesProductId' => 'required|integer|exists:products,id',
-            'salesQuantity' => 'required|numeric|min:0.001',
-            'bottleId' => 'nullable|integer|exists:products,id',
-            'bottleQuantity' => 'nullable|numeric|min:0',
-            'seedId' => 'nullable|integer|exists:products,id',
-            'seedQuantity' => 'nullable|numeric|min:0', // Seed qty is optional - if 0, we just don't deduct
-            'packingId' => 'nullable|integer|exists:products,id',
-            'packingQuantity' => 'nullable|numeric|min:0',
+        \Log::info('addSalesItem called', [
+            'user_id' => auth()->id(),
+            'salesCategoryId' => $this->salesCategoryId,
+            'salesProductId' => $this->salesProductId,
+            'salesQuantity' => $this->salesQuantity,
         ]);
+        
+        try {
+            $this->validate([
+                'salesCategoryId' => 'required|integer|exists:categories,id',
+                'salesProductId' => 'required|integer|exists:products,id',
+                'salesQuantity' => 'required|numeric|min:0.001',
+                'bottleId' => 'nullable|integer|exists:products,id',
+                'bottleQuantity' => 'nullable|numeric|min:0',
+                'seedId' => 'required|integer|exists:products,id',
+                'seedQuantity' => 'required|numeric|min:0.001',
+                'packingId' => 'required|integer|exists:products,id',
+                'packingQuantity' => 'nullable|numeric|min:0',
+            ]);
 
-        $product = Product::find($this->salesProductId);
-        if (!$product) {
-            $this->dispatch('notify', ['type' => 'error', 'message' => 'Product not found.']);
-            return;
-        }
+            \Log::info('addSalesItem validation passed');
+
+            $product = Product::find($this->salesProductId);
+            if (!$product) {
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'Product not found.']);
+                return;
+            }
 
         $productQty = (float) $this->salesQuantity;
 
@@ -766,7 +948,7 @@ class ManufacturingUserDashboard extends Component
                 ->when($this->filterBusinessId, function($q) {
                     return $q->where('business_id', $this->filterBusinessId);
                 })
-                ->when($this->filterBranchId, function($q) {
+                ->when((int)$this->filterBranchId > 0, function($q) {
                     return $q->where('branch_id', $this->filterBranchId);
                 })
                 ->sum(DB::raw("CASE WHEN direction = 'in' THEN quantity ELSE -quantity END"));
@@ -790,7 +972,7 @@ class ManufacturingUserDashboard extends Component
                 ->when($this->filterBusinessId, function($q) {
                     return $q->where('business_id', $this->filterBusinessId);
                 })
-                ->when($this->filterBranchId, function($q) {
+                ->when((int)$this->filterBranchId > 0, function($q) {
                     return $q->where('branch_id', $this->filterBranchId);
                 })
                 ->sum(DB::raw("CASE WHEN direction = 'in' THEN quantity ELSE -quantity END"));
@@ -810,7 +992,7 @@ class ManufacturingUserDashboard extends Component
                 ->when($this->filterBusinessId, function($q) {
                     return $q->where('business_id', $this->filterBusinessId);
                 })
-                ->when($this->filterBranchId, function($q) {
+                ->when((int)$this->filterBranchId > 0, function($q) {
                     return $q->where('branch_id', $this->filterBranchId);
                 })
                 ->sum(DB::raw("CASE WHEN direction = 'in' THEN quantity ELSE -quantity END"));
@@ -822,116 +1004,242 @@ class ManufacturingUserDashboard extends Component
             }
         }
 
-        DB::transaction(function () use ($product, $productQty) {
-            // Add manufacturing quantity to product
-            $meta = $product->metadata ?? [];
+        \Log::info('addSalesItem all stock checks passed, starting transaction', [
+            'productId' => $product->id,
+            'productQty' => $productQty,
+        ]);
+        } catch (\Throwable $e) {
+            \Log::error('addSalesItem validation or stock check failed: ' . $e->getMessage(), [
+                'exception' => (string)$e,
+                'user_id' => auth()->id(),
+            ]);
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()]);
+            return;
+        }
+
+        // ========== SAVE TO DATABASE (WITH TRANSACTION) ==========
+        try {
+            $bottleId = $this->bottleId;
+            $seedId = $this->seedId;
+            $packingId = $this->packingId;
+            $seedQuantity = $this->seedQuantity;
             
-            // Track which branches have manufactured this product
-            // Store as an array of branch IDs with their quantities
-            $user = auth()->user();
-            $branchIds = $user->assignedBranchIds();
-            
-            if (!empty($branchIds)) {
-                // Get the user's FIRST assigned branch
+            \DB::transaction(function () use ($product, $productQty, $bottleQty, $packingQty, $bottleId, $seedId, $packingId, $seedQuantity) {
+                // Add manufacturing quantity to product
+                $meta = $product->metadata ?? [];
+                
+                // Track which branches have manufactured this product
+                // Store as an array of branch IDs with their quantities
+                $user = auth()->user();
+                $branchIds = $user->assignedBranchIds();
+                
+                if (!empty($branchIds)) {
+                    // Get the user's FIRST assigned branch
+                    $userBranchId = (int)$branchIds[0];
+                    
+                    // Verify this branch exists
+                    $branch = \App\Models\Branch::find($userBranchId);
+                    if (!$branch) {
+                        throw new \Exception('Unable to determine your branch.');
+                    }
+                    
+                    // Initialize or get existing branch manufacturing records
+                    if (!isset($meta['manufacturing_by_branch'])) {
+                        $meta['manufacturing_by_branch'] = [];
+                    }
+                    
+                    // Ensure manufacturing_by_branch is an array
+                    if (!is_array($meta['manufacturing_by_branch'])) {
+                        $meta['manufacturing_by_branch'] = [];
+                    }
+                    
+                    // Get current quantity for this specific branch (use int key)
+                    $branchQty = isset($meta['manufacturing_by_branch'][$userBranchId]) 
+                        ? (float)$meta['manufacturing_by_branch'][$userBranchId] 
+                        : 0;
+                    
+                    // Add the new quantity ONLY to this branch
+                    $meta['manufacturing_by_branch'][$userBranchId] = $branchQty + $productQty;
+                    
+                    // Recalculate manufacturing_quantity as the SUM of all branch values
+                    $totalQty = 0;
+                    foreach ($meta['manufacturing_by_branch'] as $qty_value) {
+                        if (is_numeric($qty_value)) {
+                            $totalQty += (float)$qty_value;
+                        }
+                    }
+                    $meta['manufacturing_quantity'] = $totalQty;
+                }
+                
+                // Track daily manufactured amount PER BRANCH (accumulate if same day, reset if new day)
+                $today = now()->toDateString();
+                
+                // Initialize manufacturing_daily_qty_by_branch if needed
+                if (!isset($meta['manufacturing_daily_qty_by_branch'])) {
+                    $meta['manufacturing_daily_qty_by_branch'] = [];
+                }
+                if (!is_array($meta['manufacturing_daily_qty_by_branch'])) {
+                    $meta['manufacturing_daily_qty_by_branch'] = [];
+                }
+                
+                // Get user's branch ID (integer key)
                 $userBranchId = (int)$branchIds[0];
                 
-                // Verify this branch exists
-                $branch = \App\Models\Branch::find($userBranchId);
-                if (!$branch) {
-                    $this->dispatch('notify', ['type' => 'error', 'message' => 'Unable to determine your branch.']);
-                    return;
+                // Check if this product was already manufactured today
+                if (isset($meta['manufacturing_added_at'])) {
+                    $lastAddedDate = \Carbon\Carbon::parse($meta['manufacturing_added_at'])->toDateString();
+                    if ($lastAddedDate === $today) {
+                        // Same day - accumulate TODAY'S quantity for THIS BRANCH only
+                        $currentBranchDaily = (float)($meta['manufacturing_daily_qty_by_branch'][$userBranchId] ?? 0);
+                        $meta['manufacturing_daily_qty_by_branch'][$userBranchId] = $currentBranchDaily + $productQty;
+                    } else {
+                        // Different day - reset for today (clear old branch data, start fresh)
+                        $meta['manufacturing_daily_qty_by_branch'] = [];
+                        $meta['manufacturing_daily_qty_by_branch'][$userBranchId] = $productQty;
+                    }
+                } else {
+                    // First time manufacturing this product
+                    $meta['manufacturing_daily_qty_by_branch'][$userBranchId] = $productQty;
                 }
                 
-                // Initialize or get existing branch manufacturing records
-                if (!isset($meta['manufacturing_by_branch'])) {
-                    $meta['manufacturing_by_branch'] = [];
+                // Also keep the old manufacturing_daily_qty for backward compatibility (global sum)
+                $globalDaily = 0;
+                foreach ($meta['manufacturing_daily_qty_by_branch'] as $qty) {
+                    $globalDaily += (float)$qty;
+                }
+                $meta['manufacturing_daily_qty'] = $globalDaily;
+                
+                // Always update the timestamp to today
+                $meta['manufacturing_added_at'] = now()->toIso8601String();
+
+                // Store the newly manufactured quantity (the current addition)
+                $meta['new_mfr_quantity'] = $productQty;
+                
+                // Store the current seed deduction for display
+                $currentSeedQty = 0;
+                if ($seedId && !empty($seedQuantity) && (float) $seedQuantity > 0) {
+                    $currentSeedQty = (float) $seedQuantity;
+                }
+                $meta['current_seed_deduction'] = $currentSeedQty;
+
+                // Store who manufactured this item per branch
+                $currentUser = auth()->user();
+                $userBranchIds = $currentUser->assignedBranchIds();
+                
+                // Get the user's assigned branch (should be only one branch per user)
+                $userBranch = $userBranchIds[0] ?? null;
+                
+                // Store manufacturer info per branch using the user's assigned branch only
+                if (!isset($meta['manufactured_by_per_branch'])) {
+                    $meta['manufactured_by_per_branch'] = [];
                 }
                 
-                // Ensure manufacturing_by_branch is an array
-                if (!is_array($meta['manufacturing_by_branch'])) {
-                    $meta['manufacturing_by_branch'] = [];
+                if ($userBranch) {
+                    $meta['manufactured_by_per_branch'][$userBranch] = [
+                        'username' => $currentUser->name,
+                        'branch_id' => $userBranch,
+                    ];
                 }
                 
-                // Get current quantity for this specific branch (use int key)
-                $branchQty = isset($meta['manufacturing_by_branch'][$userBranchId]) 
-                    ? (float)$meta['manufacturing_by_branch'][$userBranchId] 
-                    : 0;
+                // Also keep the original for backwards compatibility
+                $meta['manufactured_by_username'] = $currentUser->name;
+                $meta['manufactured_by_branch_id'] = $userBranch;
+
+                // Persist seed deduction info PER BRANCH for display in the table
+                if ($seedId && !empty($seedQuantity) && (float) $seedQuantity > 0) {
+                    $seed = Product::find($seedId);
+                    
+                    // Store seed deduction PER BRANCH (not accumulated across branches)
+                    if (!isset($meta['seed_by_branch'])) {
+                        $meta['seed_by_branch'] = [];
+                    }
+                    
+                    $branchSeedQty = isset($meta['seed_by_branch'][$userBranchId]) 
+                        ? (float)$meta['seed_by_branch'][$userBranchId]
+                        : 0;
+                    
+                    $meta['seed_by_branch'][$userBranchId] = $branchSeedQty + (float)$seedQuantity;
+                    
+                    $meta['seed_name']          = $seed?->name ?? 'Seed';
+                    $meta['seed_unit']          = $seed?->unit ?? 'kg';
+                }
+
+                // Calculate and store total material used quantity
+                $materialUsedQty = 0;
+                $materialUsedUnit = '';
                 
-                // Add the new quantity ONLY to this branch
-                $meta['manufacturing_by_branch'][$userBranchId] = $branchQty + $productQty;
+                // Add bottle quantity to material used
+                if ($bottleId && $bottleQty > 0) {
+                    $bottle = Product::find($bottleId);
+                    $materialUsedQty += $bottleQty;
+                    $materialUsedUnit = $bottle?->unit ?? 'units';
+                }
                 
-                // Recalculate manufacturing_quantity as the SUM of all branch values
-                $totalQty = 0;
-                foreach ($meta['manufacturing_by_branch'] as $qty_value) {
-                    if (is_numeric($qty_value)) {
-                        $totalQty += (float)$qty_value;
+                // Add packing quantity to material used
+                if ($packingId && $packingQty > 0) {
+                    $packing = Product::find($packingId);
+                    $materialUsedQty += $packingQty;
+                    if (empty($materialUsedUnit)) {
+                        $materialUsedUnit = $packing?->unit ?? 'units';
                     }
                 }
-                $meta['manufacturing_quantity'] = $totalQty;
-            }
-            
-            // Track daily manufactured amount (accumulate if same day, reset if new day)
-            $today = now()->toDateString();
-            
-            // Check if this product was already manufactured today
-            if (isset($meta['manufacturing_added_at'])) {
-                $lastAddedDate = \Carbon\Carbon::parse($meta['manufacturing_added_at'])->toDateString();
-                if ($lastAddedDate === $today) {
-                    // Same day - accumulate today's total
-                    $currentDaily = (float)($meta['manufacturing_daily_qty'] ?? 0);
-                    $meta['manufacturing_daily_qty'] = $currentDaily + $productQty;
-                } else {
-                    // Different day - reset for today
-                    $meta['manufacturing_daily_qty'] = $productQty;
+                
+                // Add seed quantity to material used
+                if ($seedId && !empty($seedQuantity) && (float) $seedQuantity > 0) {
+                    $materialUsedQty += (float) $seedQuantity;
                 }
-            } else {
-                // First time manufacturing this product
-                $meta['manufacturing_daily_qty'] = $productQty;
-            }
-            
-            // Always update the timestamp to today
-            $meta['manufacturing_added_at'] = now()->toIso8601String();
+                
+                // Store accumulated material used quantity
+                if ($materialUsedQty > 0) {
+                    $prevMaterialUsed = (float) ($meta['material_used_quantity'] ?? 0);
+                    $meta['material_used_quantity'] = $prevMaterialUsed + $materialUsedQty;
+                    $meta['material_used_unit'] = $materialUsedUnit;
+                }
 
-            // Persist seed deduction info for display in the table
-            if ($this->seedId && !empty($this->seedQuantity) && (float) $this->seedQuantity > 0) {
-                $seed = Product::find($this->seedId);
-                $prevSeedQty = (float) ($meta['seed_quantity_used'] ?? 0);
-                $meta['seed_quantity_used'] = $prevSeedQty + (float) $this->seedQuantity;
-                $meta['seed_name']          = $seed?->name ?? 'Seed';
-                $meta['seed_unit']          = $seed?->unit ?? 'kg';
-            }
+                $product->metadata = $meta;
+                $product->status = 'active';
+                $product->is_marketplace_visible = true;
+                
+                // DO NOT change the product's business_id
+                // Each branch tracks their manufacturing separately in metadata
+                // The product's business_id should remain as it was originally set
+                
+                $product->save();
+                
+                \Log::info('addSalesItem product metadata saved');
 
-            $product->metadata = $meta;
-            $product->status = 'active';
-            $product->is_marketplace_visible = true;
-            
-            // If the product doesn't belong to the user's business, update it
-            // This handles the case where Bilal uses Oil Factory categories/products
-            if (!empty($this->filterBusinessId) && $product->business_id !== (int)$this->filterBusinessId) {
-                $product->business_id = (int)$this->filterBusinessId;
-            }
-            
-            $product->save();
+                // Deduct bottle (use product quantity as default if not specified)
+                $bottleQty = !empty($this->bottleQuantity) ? (float) $this->bottleQuantity : $productQty;
+                if ($bottleId && $bottleQty > 0) {
+                    $this->deductRawMaterial($bottleId, $bottleQty);
+                }
 
-            // Deduct bottle (use product quantity as default if not specified)
-            $bottleQty = !empty($this->bottleQuantity) ? (float) $this->bottleQuantity : $productQty;
-            if ($this->bottleId && $bottleQty > 0) {
-                $this->deductRawMaterial($this->bottleId, $bottleQty);
-            }
+                // Deduct seed
+                if ($seedId && !empty($seedQuantity) && (float) $seedQuantity > 0) {
+                    $this->deductRawMaterial($seedId, (float) $seedQuantity);
+                }
 
-            // Deduct seed
-            if ($this->seedId && !empty($this->seedQuantity) && (float) $this->seedQuantity > 0) {
-                $this->deductRawMaterial($this->seedId, (float) $this->seedQuantity);
-            }
+                // Deduct packing material (use product quantity as default if not specified)
+                $packingQty = !empty($this->packingQuantity) ? (float) $this->packingQuantity : $productQty;
+                if ($packingId && $packingQty > 0) {
+                    $this->deductRawMaterial($packingId, $packingQty);
+                }
 
-            // Deduct packing material (use product quantity as default if not specified)
-            $packingQty = !empty($this->packingQuantity) ? (float) $this->packingQuantity : $productQty;
-            if ($this->packingId && $packingQty > 0) {
-                $this->deductRawMaterial($this->packingId, $packingQty);
-            }
-        });
+                \Log::info('addSalesItem raw materials deducted');
+            });
+        } catch (\Throwable $e) {
+            \Log::error('addSalesItem database operation failed: ' . $e->getMessage(), [
+                'exception' => (string)$e,
+                'user_id' => auth()->id(),
+            ]);
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()]);
+            return;
+        }
+
+        \Log::info('addSalesItem transaction completed successfully');
 
         // Reset form - set to string values first to force Livewire re-evaluation
+        // This triggers Livewire 4's computed property recalculation automatically
         $this->salesProductId = null;
         $this->salesQuantity = '';
         $this->bottleId = null;
@@ -942,11 +1250,8 @@ class ManufacturingUserDashboard extends Component
         $this->packingQuantity = '';
         $this->salesCategoryId = null;
         
-        // Increment refresh token to force all computed properties to recalculate
-        $this->refreshToken++;
-        
-        // Dispatch success and let Livewire re-render computed properties with fresh DB data
-        $this->dispatch('notify', ['type' => 'success', 'message' => 'Item added to the list. Raw materials deducted.']);
+        // Dispatch success notification
+        $this->dispatch('notify', ['type' => 'success', 'message' => '✅ Item added to list! Raw materials deducted.']);
     }
 
     // Edit modal state
@@ -954,6 +1259,9 @@ class ManufacturingUserDashboard extends Component
     public ?int $editingProductId = null;
     public string $editQuantity = '';
     public string $editReason = '';
+    public string $editItemName = '';
+    public string $editNewMfrQty = '';
+    public string $editUsedQty = '';
 
     public function openEditSalesItemModal(int $productId): void
     {
@@ -962,7 +1270,7 @@ class ManufacturingUserDashboard extends Component
 
         $meta = $product->metadata ?? [];
         
-        // Get the quantity for THIS user's branch (not the global manufacturing_quantity)
+        // Get the quantity for THIS user's branch
         $user = auth()->user();
         $userBranchIds = $user->assignedBranchIds();
         $branchQty = 0;
@@ -979,6 +1287,9 @@ class ManufacturingUserDashboard extends Component
         }
 
         $this->editingProductId = $productId;
+        $this->editItemName = $product->name;
+        $this->editNewMfrQty = (string) ($meta['new_mfr_quantity'] ?? 0);
+        $this->editUsedQty = (string) ($meta['current_seed_deduction'] ?? 0);
         $this->editQuantity = (string) $branchQty;
         $this->editReason = '';
         $this->showEditSalesItemModal = true;
@@ -987,7 +1298,9 @@ class ManufacturingUserDashboard extends Component
     public function saveSalesItem(): void
     {
         $this->validate([
-            'editQuantity' => 'required|numeric|min:0',
+            'editItemName' => 'required|string|min:1|max:255',
+            'editNewMfrQty' => 'required|numeric|min:0',
+            'editUsedQty' => 'required|numeric|min:0',
             'editReason' => 'required|string|min:3|max:500',
         ]);
 
@@ -998,7 +1311,24 @@ class ManufacturingUserDashboard extends Component
         $user = auth()->user();
         $userBranchIds = $user->assignedBranchIds();
         
-        // Update ONLY this branch's quantity
+        // Get old values to calculate differences
+        $oldNewMfrQty = (float) ($meta['new_mfr_quantity'] ?? 0);
+        $oldUsedQty = (float) ($meta['current_seed_deduction'] ?? 0);
+        $newNewMfrQty = (float) $this->editNewMfrQty;
+        $newUsedQty = (float) $this->editUsedQty;
+        
+        // Calculate differences
+        $newMfrDifference = $newNewMfrQty - $oldNewMfrQty;  // e.g., 10 - 12 = -2
+        $usedQtyDifference = $newUsedQty - $oldUsedQty;      // e.g., 3 - 2 = +1
+        
+        // Update item name
+        $product->name = $this->editItemName;
+        
+        // Update metadata with new values
+        $meta['new_mfr_quantity'] = $newNewMfrQty;
+        $meta['current_seed_deduction'] = $newUsedQty;
+        
+        // Update manufacturing_by_branch for this branch by adding the difference
         if (!empty($userBranchIds)) {
             $userBranchId = (int)$userBranchIds[0];
             
@@ -1011,8 +1341,13 @@ class ManufacturingUserDashboard extends Component
                 $meta['manufacturing_by_branch'] = [];
             }
             
-            // Set this branch's quantity to the edited value
-            $meta['manufacturing_by_branch'][$userBranchId] = (float) $this->editQuantity;
+            // Get current branch quantity and add the difference
+            $currentBranchQty = isset($meta['manufacturing_by_branch'][$userBranchId]) 
+                ? (float)$meta['manufacturing_by_branch'][$userBranchId]
+                : 0;
+            
+            // New branch quantity = old + difference (e.g., 24 + (-2) = 22)
+            $meta['manufacturing_by_branch'][$userBranchId] = $currentBranchQty + $newMfrDifference;
             
             // Recalculate manufacturing_quantity as the SUM of all branch values
             $totalQty = 0;
@@ -1022,28 +1357,66 @@ class ManufacturingUserDashboard extends Component
                 }
             }
             $meta['manufacturing_quantity'] = $totalQty;
+            
+            // Update seed_by_branch by adding the difference
+            if (!isset($meta['seed_by_branch'])) {
+                $meta['seed_by_branch'] = [];
+            }
+            
+            $currentBranchSeedQty = isset($meta['seed_by_branch'][$userBranchId]) 
+                ? (float)$meta['seed_by_branch'][$userBranchId]
+                : 0;
+            
+            // New branch seed quantity = old + difference (e.g., 6 + 1 = 7)
+            $meta['seed_by_branch'][$userBranchId] = $currentBranchSeedQty + $usedQtyDifference;
         }
         
-        // Track if this is a new manufacturing entry (no manufacturing_added_at yet)
-        $isNewEntry = !isset($meta['manufacturing_added_at']);
-        
-        // Only set manufacturing_added_at for new entries
-        if ($isNewEntry) {
-            $meta['manufacturing_added_at'] = now()->toIso8601String();
-            $meta['manufacturing_daily_qty'] = (float) $this->editQuantity;
-        }
-        // For existing entries: DON'T change manufacturing_added_at or manufacturing_daily_qty
-        // (keep the original manufacture date and daily qty from when it was first added)
-
         $product->metadata = $meta;
-        $product->status = 'active';
-        $product->is_marketplace_visible = true;
         $product->save();
-
-        $this->showEditSalesItemModal = false;
-        $this->editingProductId = null;
-
-        $this->dispatch('notify', ['type' => 'success', 'message' => 'Item updated successfully.']);
+        
+        // Log stock movements for audit trail if there are differences
+        if ($newMfrDifference != 0 || $usedQtyDifference != 0) {
+            // Get location for this branch
+            $location = Location::where('branch_id', $userBranchIds[0] ?? null)->first();
+            $locationId = $location?->id;
+            
+            if ($locationId) {
+                if ($newMfrDifference != 0) {
+                    DB::table('stock_movements')->insert([
+                        'location_id' => $locationId,
+                        'item_id' => $product->id,
+                        'item_type' => 'product',
+                        'movement_type' => 'manufactured_quantity_adjusted',
+                        'direction' => $newMfrDifference > 0 ? 'in' : 'out',
+                        'quantity' => abs($newMfrDifference),
+                        'moved_at' => now(),
+                        'notes' => "Edited manufactured quantity: {$oldNewMfrQty} → {$newNewMfrQty}. Reason: {$this->editReason}",
+                        'created_by' => $user->id,
+                        'business_id' => $product->business_id,
+                        'branch_id' => $userBranchIds[0] ?? null,
+                    ]);
+                }
+                
+                if ($usedQtyDifference != 0) {
+                    DB::table('stock_movements')->insert([
+                        'location_id' => $locationId,
+                        'item_id' => $product->id,
+                        'item_type' => 'product',
+                        'movement_type' => 'seed_used_adjusted',
+                        'direction' => $usedQtyDifference > 0 ? 'out' : 'in',
+                        'quantity' => abs($usedQtyDifference),
+                        'moved_at' => now(),
+                        'notes' => "Edited seed used: {$oldUsedQty} → {$newUsedQty}. Reason: {$this->editReason}",
+                        'created_by' => $user->id,
+                        'business_id' => $product->business_id,
+                        'branch_id' => $userBranchIds[0] ?? null,
+                    ]);
+                }
+            }
+        }
+        
+        $this->closeEditSalesItemModal();
+        $this->dispatch('notify', ['type' => 'success', 'message' => '✅ Item updated successfully!']);
     }
 
     public function closeEditSalesItemModal(): void
@@ -1075,54 +1448,173 @@ class ManufacturingUserDashboard extends Component
         ]);
 
         $product = Product::find($this->deletingProductId);
-        if ($product) {
-            $meta = $product->metadata ?? [];
-            $user = auth()->user();
-            $userBranchIds = $user->assignedBranchIds();
+        if (!$product) return;
+
+        $meta = $product->metadata ?? [];
+        $user = auth()->user();
+        $userBranchIds = $user->assignedBranchIds();
+        
+        // Reverse the manufactured quantity and seed used for this branch
+        if (!empty($userBranchIds)) {
+            $userBranchId = (int)$userBranchIds[0];
             
-            // Zero out ONLY this branch's quantity
-            if (!empty($userBranchIds)) {
-                $userBranchId = (int)$userBranchIds[0];
-                
-                // Initialize branch structure if needed
-                if (!isset($meta['manufacturing_by_branch'])) {
-                    $meta['manufacturing_by_branch'] = [];
-                }
-                
-                if (!is_array($meta['manufacturing_by_branch'])) {
-                    $meta['manufacturing_by_branch'] = [];
-                }
-                
-                // Set this branch's quantity to 0
-                $meta['manufacturing_by_branch'][$userBranchId] = 0;
-                
-                // Recalculate manufacturing_quantity as the SUM of all remaining branch values
-                $totalQty = 0;
-                foreach ($meta['manufacturing_by_branch'] as $qty_value) {
-                    if (is_numeric($qty_value)) {
-                        $totalQty += (float)$qty_value;
+            // Get the current values before deletion for logging
+            $newMfrQty = (float) ($meta['new_mfr_quantity'] ?? 0);
+            $usedQty = (float) ($meta['current_seed_deduction'] ?? 0);
+            
+            // Get the material quantities to restore
+            $bottleQtyToRestore = 0;
+            $seedQtyToRestore = 0;
+            $packingQtyToRestore = 0;
+            $bottleId = null;
+            $seedId = null;
+            $packingId = null;
+            
+            // Find the material IDs and quantities from the FinishedGood → ProductionBatch → BatchMaterialConsumption
+            $latestFinished = \App\Models\FinishedGood::where('product_id', $product->id)
+                ->with(['batch.rawMaterialConsumptions'])
+                ->orderByDesc('id')
+                ->first();
+            
+            if ($latestFinished && $latestFinished->batch) {
+                foreach ($latestFinished->batch->rawMaterialConsumptions() as $consumption) {
+                    $rawMat = $consumption->rawMaterial;
+                    if ($rawMat) {
+                        // Try to identify what type of material this is by name/category
+                        $matName = strtolower($rawMat->name ?? '');
+                        $qty = (float) $consumption->getEffectiveQuantity();
+                        
+                        // Check if it's a bottle (bottle, jar, container in name)
+                        if (strpos($matName, 'bottle') !== false || strpos($matName, 'jar') !== false || strpos($matName, 'container') !== false) {
+                            $bottleId = $rawMat->id;
+                            $bottleQtyToRestore += $qty;
+                        }
+                        // Check if it's packing (packing, box, bag in name)
+                        elseif (strpos($matName, 'packing') !== false || strpos($matName, 'box') !== false || strpos($matName, 'bag') !== false) {
+                            $packingId = $rawMat->id;
+                            $packingQtyToRestore += $qty;
+                        }
+                        // Otherwise assume it's seed
+                        else {
+                            $seedId = $rawMat->id;
+                            $seedQtyToRestore += $qty;
+                        }
                     }
                 }
-                $meta['manufacturing_quantity'] = $totalQty;
-                
-                // Only null out manufacturing_added_at if NO branch has a non-zero qty remaining
-                if ($totalQty <= 0) {
-                    $meta['manufacturing_added_at'] = null;
+            }
+            
+            // Remove this from manufacturing_by_branch
+            if (!isset($meta['manufacturing_by_branch'])) {
+                $meta['manufacturing_by_branch'] = [];
+            }
+            
+            if (!is_array($meta['manufacturing_by_branch'])) {
+                $meta['manufacturing_by_branch'] = [];
+            }
+            
+            // Get current branch quantity for logging
+            $currentBranchQty = isset($meta['manufacturing_by_branch'][$userBranchId]) 
+                ? (float)$meta['manufacturing_by_branch'][$userBranchId]
+                : 0;
+            
+            // Set this branch's quantity to 0 (delete this branch's record)
+            $meta['manufacturing_by_branch'][$userBranchId] = 0;
+            
+            // Recalculate manufacturing_quantity as the SUM of all remaining branch values
+            $totalQty = 0;
+            foreach ($meta['manufacturing_by_branch'] as $qty_value) {
+                if (is_numeric($qty_value)) {
+                    $totalQty += (float)$qty_value;
                 }
-            } else {
-                // Fallback for super admin or edge cases
-                $meta['manufacturing_quantity'] = 0;
+            }
+            $meta['manufacturing_quantity'] = $totalQty;
+            
+            // Reverse the seed_by_branch
+            $currentBranchSeedQty = isset($meta['seed_by_branch'][$userBranchId]) 
+                ? (float)$meta['seed_by_branch'][$userBranchId]
+                : 0;
+                
+            if (isset($meta['seed_by_branch'][$userBranchId])) {
+                $meta['seed_by_branch'][$userBranchId] = 0;
+            }
+            
+            // Reset new_mfr_quantity and current_seed_deduction to 0
+            $meta['new_mfr_quantity'] = 0;
+            $meta['current_seed_deduction'] = 0;
+            
+            // Only null out manufacturing_added_at if NO branch has a non-zero qty remaining
+            if ($totalQty <= 0) {
                 $meta['manufacturing_added_at'] = null;
             }
             
             $product->metadata = $meta;
             $product->save();
+            
+            // Restore raw materials back to stock
+            if ($bottleId && $bottleQtyToRestore > 0) {
+                $this->restoreRawMaterial($bottleId, $bottleQtyToRestore);
+            }
+            
+            if ($seedId && $seedQtyToRestore > 0) {
+                $this->restoreRawMaterial($seedId, $seedQtyToRestore);
+            }
+            
+            if ($packingId && $packingQtyToRestore > 0) {
+                $this->restoreRawMaterial($packingId, $packingQtyToRestore);
+            }
+            
+            // Log stock movements for deletion audit trail
+            if ($currentBranchQty > 0) {
+                // Get location for this branch
+                $location = Location::where('branch_id', $userBranchId)->first();
+                if ($location) {
+                    DB::table('stock_movements')->insert([
+                        'location_id' => $location->id,
+                        'item_id' => $product->id,
+                        'item_type' => 'product',
+                        'movement_type' => 'manufactured_quantity_deleted',
+                        'direction' => 'out',
+                        'quantity' => abs($currentBranchQty),
+                        'moved_at' => now(),
+                        'notes' => "Deleted manufactured item: {$currentBranchQty} units removed. Reason: {$this->deleteReason}",
+                        'created_by' => $user->id,
+                        'business_id' => $product->business_id,
+                        'branch_id' => $userBranchIds[0] ?? null,
+                    ]);
+                }
+            }
+            
+            if ($currentBranchSeedQty > 0) {
+                // Get location for this branch
+                $location = Location::where('branch_id', $userBranchId)->first();
+                if ($location) {
+                    DB::table('stock_movements')->insert([
+                        'location_id' => $location->id,
+                        'item_id' => $product->id,
+                        'item_type' => 'product',
+                        'movement_type' => 'seed_used_deleted',
+                        'direction' => 'in',
+                        'quantity' => abs($currentBranchSeedQty),
+                        'moved_at' => now(),
+                        'notes' => "Deleted seed used: {$currentBranchSeedQty} units restored. Reason: {$this->deleteReason}",
+                        'created_by' => $user->id,
+                        'business_id' => $product->business_id,
+                        'branch_id' => $userBranchIds[0] ?? null,
+                    ]);
+                }
+            }
+        } else {
+            // Fallback for super admin or edge cases
+            $meta['manufacturing_quantity'] = 0;
+            $meta['new_mfr_quantity'] = 0;
+            $meta['current_seed_deduction'] = 0;
+            $meta['manufacturing_added_at'] = null;
+            $product->metadata = $meta;
+            $product->save();
         }
 
-        $this->showDeleteConfirmModal = false;
-        $this->deletingProductId = null;
-
-        $this->dispatch('notify', ['type' => 'success', 'message' => 'Item removed from the list.']);
+        $this->closeDeleteConfirmModal();
+        $this->dispatch('notify', ['type' => 'success', 'message' => '✅ Item deleted successfully! Raw materials restored.']);
     }
 
     public function closeDeleteConfirmModal(): void
@@ -1205,10 +1697,26 @@ class ManufacturingUserDashboard extends Component
                 ->orderBy('name');
 
         if ($this->sellType === 'purchase') {
-            // Only show categories that have actual stock transferred to this branch
-            // by the general manager (purchase_type=product, status=completed, qty>0)
-            // Category belongs to the source product's business — use withoutGlobalScopes
-            $categoryIds = Purchase::where('purchases.purchase_type', Purchase::TYPE_PRODUCT)
+            // Show categories that have actual stock transferred to this branch
+            // Get categories from BOTH:
+            // 1. Transfer records (stock_movements with reference_type='StockTransfer')
+            // 2. Old Purchase records (for backwards compatibility)
+            
+            $transferCategoryIds = \DB::table('stock_movements')
+                ->where('movement_type', StockMovement::TYPE_TRANSFER_IN)
+                ->where('reference_type', 'StockTransfer')
+                ->where('direction', 'in')
+                ->when(!empty($this->filterBranchId), function($q) {
+                    $locationIds = Location::where('branch_id', (int)$this->filterBranchId)->pluck('id');
+                    return $q->whereIn('location_id', $locationIds);
+                })
+                ->join('products', 'stock_movements.item_id', '=', 'products.id')
+                ->whereNull('products.deleted_at')
+                ->pluck('products.category_id')
+                ->filter()
+                ->unique();
+            
+            $purchaseCategoryIds = Purchase::where('purchases.purchase_type', Purchase::TYPE_PRODUCT)
                 ->where('purchases.status', Purchase::STATUS_COMPLETED)
                 ->where('purchases.quantity', '>', 0)
                 ->when(!empty($this->filterBranchId),   fn($q) => $q->where('purchases.branch_id',   (int) $this->filterBranchId))
@@ -1219,6 +1727,8 @@ class ManufacturingUserDashboard extends Component
                 ->pluck('cat_id')
                 ->filter()
                 ->unique();
+
+            $categoryIds = $transferCategoryIds->merge($purchaseCategoryIds)->unique();
 
             // Use withoutGlobalScopes — category may belong to source business
             return Category::withoutGlobalScopes()
@@ -1244,46 +1754,65 @@ class ManufacturingUserDashboard extends Component
             return collect();
         }
 
+        $user = auth()->user();
+        $userBranchIds = $user->assignedBranchIds();
+
+        if ($this->sellType === 'purchase') {
+            // For transferred products: query without business filter since transferred products
+            // may come from different businesses. Category itself acts as the scope.
+            $query = Product::withoutGlobalScopes()
+                ->where('category_id', $this->sellCategoryId)
+                ->where('status', 'active')
+                ->orderBy('name');
+
+            return $query->get()
+                ->map(function ($product) use ($userBranchIds) {
+                    // Get location IDs for user's assigned branches
+                    $locationIds = Location::whereIn('branch_id', $userBranchIds)->pluck('id')->toArray();
+                    
+                    $totalQty = 0;
+                    if (!empty($locationIds)) {
+                        // Get transferred-in stock for this product
+                        $transferredQty = \DB::table('stock_movements')
+                            ->where('item_type', 'product')
+                            ->where('item_id', $product->id)
+                            ->where('movement_type', StockMovement::TYPE_TRANSFER_IN)
+                            ->where('reference_type', 'StockTransfer')
+                            ->where('direction', 'in')
+                            ->whereIn('location_id', $locationIds)
+                            ->sum('quantity');
+                        
+                        $totalQty = max(0, (float)$transferredQty);
+                    }
+                    
+                    $product->available_qty = max(0, $totalQty);
+                    return $product;
+                })
+                ->filter(fn($p) => $p->available_qty > 0)
+                ->values();
+        }
+        
+        // For manufactured products: apply business filter normally
         $query = Product::when(!empty($this->filterBusinessId), fn($q) =>
                     $q->where('business_id', $this->filterBusinessId))
                 ->where('category_id', $this->sellCategoryId)
                 ->where('status', 'active')
                 ->orderBy('name');
 
-        // For purchase type, restrict to products with actual transferred stock
-        // and use withoutGlobalScopes since products may belong to source business
-        if ($this->sellType === 'purchase') {
-            $productIds = Purchase::where('purchases.purchase_type', Purchase::TYPE_PRODUCT)
-                ->where('purchases.status', Purchase::STATUS_COMPLETED)
-                ->where('purchases.quantity', '>', 0)
-                ->when(!empty($this->filterBranchId),   fn($q) => $q->where('purchases.branch_id',   (int) $this->filterBranchId))
-                ->when(!empty($this->filterBusinessId), fn($q) => $q->where('purchases.business_id', (int) $this->filterBusinessId))
-                ->join('products', 'purchases.product_id', '=', 'products.id')
-                ->whereNull('products.deleted_at')
-                ->where(function($q) {
-                    $q->where('purchases.category_id', $this->sellCategoryId)
-                      ->orWhere('products.category_id', $this->sellCategoryId);
-                })
-                ->pluck('purchases.product_id')
-                ->filter()
-                ->unique();
-
-            return Product::withoutGlobalScopes()
-                ->whereIn('id', $productIds)
-                ->where('status', 'active')
-                ->orderBy('name')
-                ->get()
-                ->map(function ($product) {
-                    $product->available_qty = $this->resolveAvailableQty($product);
-                    return $product;
-                })
-                ->filter(fn($p) => $p->available_qty > 0)
-                ->values();
-        }
-
         return $query->get()
-            ->map(function ($product) {
-                $product->available_qty = $this->resolveAvailableQty($product);
+            ->map(function ($product) use ($userBranchIds) {
+                $meta = $product->metadata ?? [];
+                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                
+                $totalQty = 0;
+                foreach ($userBranchIds as $branchId) {
+                    $branchIdInt = (int)$branchId;
+                    if (isset($manufacturingByBranch[$branchIdInt])) {
+                        $totalQty += (float)$manufacturingByBranch[$branchIdInt];
+                    }
+                }
+                
+                $product->available_qty = max(0, $totalQty);
                 return $product;
             })
             ->filter(fn($p) => $p->available_qty > 0)
@@ -1325,6 +1854,10 @@ class ManufacturingUserDashboard extends Component
     }
 
     // Get available quantity for selected product
+    /**
+     * Get the manufactured quantity for the current user's branch(es) only.
+     * This is what's available to sell - only what this branch manufactured.
+     */
     public function getSellAvailableQuantity(): float
     {
         if (!$this->sellProductId) {
@@ -1336,7 +1869,44 @@ class ManufacturingUserDashboard extends Component
             return 0;
         }
 
-        return $this->resolveAvailableQty($product);
+        $user = auth()->user();
+        $userBranchIds = $user->assignedBranchIds();
+
+        if ($this->sellType === 'purchase') {
+            // For transferred products: get stock from transfers
+            // Get location IDs for user's assigned branches
+            $locationIds = Location::whereIn('branch_id', $userBranchIds)->pluck('id')->toArray();
+            
+            if (empty($locationIds)) {
+                return 0;
+            }
+
+            // Get transferred-in stock for this product
+            $transferredQty = \DB::table('stock_movements')
+                ->where('item_type', 'product')
+                ->where('item_id', $this->sellProductId)
+                ->where('movement_type', StockMovement::TYPE_TRANSFER_IN)
+                ->where('reference_type', 'StockTransfer')
+                ->where('direction', 'in')
+                ->whereIn('location_id', $locationIds)
+                ->sum('quantity');
+            
+            return max(0, (float)$transferredQty);
+        }
+
+        // For manufactured products: get from manufacturing_by_branch metadata
+        $meta = $product->metadata ?? [];
+        $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+        
+        $totalQty = 0;
+        foreach ($userBranchIds as $branchId) {
+            $branchIdInt = (int)$branchId;
+            if (isset($manufacturingByBranch[$branchIdInt])) {
+                $totalQty += (float)$manufacturingByBranch[$branchIdInt];
+            }
+        }
+        
+        return max(0, $totalQty);
     }
 
     // Add item to sales list
@@ -1575,20 +2145,25 @@ class ManufacturingUserDashboard extends Component
                 return false;
             }
 
-            // Check if user's branch has manufactured this product
+            // For non-super-admin: ONLY show items manufactured BY THIS USER'S BRANCH
             if (!empty($userBranchIds)) {
-                $branchData = $meta['manufacturing_by_branch'] ?? [];
-                if (empty($branchData)) {
+                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                if (empty($manufacturingByBranch)) {
                     return false;
                 }
 
-                // Check if any of user's branches are in the manufacturing_by_branch data
+                // Check if ANY of user's branches have manufactured this product
+                $hasUserBranchData = false;
                 foreach ($userBranchIds as $branchId) {
-                    if (isset($branchData[$branchId]) && (float)$branchData[$branchId] > 0) {
-                        return true;
+                    if (isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0) {
+                        $hasUserBranchData = true;
+                        break;
                     }
                 }
-                return false;
+                
+                if (!$hasUserBranchData) {
+                    return false;
+                }
             }
 
             // Super admin sees all products manufactured today
@@ -1596,21 +2171,23 @@ class ManufacturingUserDashboard extends Component
         })->map(function ($product) use ($userBranchIds) {
             $meta = $product->metadata ?? [];
             
-            // Sum quantity from manufacturing_by_branch for this user's branches
-            $branchData = $meta['manufacturing_by_branch'] ?? [];
+            // Sum quantity ONLY from THIS USER'S branches
+            $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
             $qty = 0;
             $seedQty = 0;
 
             if (!empty($userBranchIds)) {
+                // Non-super-admin: sum only their branch quantities
                 foreach ($userBranchIds as $branchId) {
-                    if (isset($branchData[$branchId])) {
-                        $qty += (float) ($branchData[$branchId] ?? 0);
+                    if (isset($manufacturingByBranch[$branchId])) {
+                        $qty += (float) $manufacturingByBranch[$branchId];
                     }
                 }
                 $seedQty = (float) ($meta['seed_quantity_used'] ?? 0);
             } else {
-                // Super admin: sum all branch quantities
-                foreach ($branchData as $qty_value) {
+                // Super admin: sum only branch quantities (do NOT include all branches)
+                // For super admin showing daily manufactured, only show their assigned business
+                foreach ($manufacturingByBranch as $qty_value) {
                     if (is_numeric($qty_value)) {
                         $qty += (float) $qty_value;
                     }
@@ -1621,7 +2198,7 @@ class ManufacturingUserDashboard extends Component
             return (object) [
                 'item_name'     => $product->name,
                 'category'      => optional($product->category)->name,
-                'quantity'      => $qty,  // Use only branch-specific qty, never fall back to manufacturing_daily_qty
+                'quantity'      => $qty,
                 'seed_qty_used' => $seedQty,
                 'selling_price' => (float) ($product->selling_price ?? 0),
                 'date_added'    => $meta['manufacturing_added_at'] ?? now()->toIso8601String(),
@@ -1637,6 +2214,58 @@ class ManufacturingUserDashboard extends Component
             return $this->getDailyManufactured();
         }
         return parent::__get($name);
+    }
+
+    /**
+     * Get the manufactured-by information from product metadata.
+     * Returns formatted string of branch names and their quantities.
+     */
+    public function getManufacturedByInfo($product): string
+    {
+        $meta = $product->metadata ?? [];
+        $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+        
+        if (empty($manufacturingByBranch)) {
+            return '—';
+        }
+        
+        $branches = \App\Models\Branch::whereIn('id', array_keys($manufacturingByBranch))->get();
+        $branchMap = $branches->keyBy('id');
+        
+        $items = [];
+        foreach ($manufacturingByBranch as $branchId => $qty) {
+            if ((float)$qty > 0) {
+                $branchId = (int)$branchId;
+                $branch = $branchMap->get($branchId);
+                $branchName = $branch ? $branch->name : "Branch #{$branchId}";
+                $qtyFormatted = rtrim(rtrim(number_format($qty, 3, '.', ''), '0'), '.');
+                $items[] = "{$branchName} ({$qtyFormatted})";
+            }
+        }
+        
+        return !empty($items) ? implode(', ', $items) : '—';
+    }
+
+    /**
+     * Get the manufactured quantity for the current user's branch(es).
+     */
+    public function getManufacturedQtyForUser($product): string
+    {
+        $user = auth()->user();
+        $userBranchIds = $user->assignedBranchIds();
+        
+        $meta = $product->metadata ?? [];
+        $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+        
+        $totalQty = 0;
+        foreach ($userBranchIds as $branchId) {
+            $branchIdInt = (int)$branchId;
+            if (isset($manufacturingByBranch[$branchIdInt])) {
+                $totalQty += (float)$manufacturingByBranch[$branchIdInt];
+            }
+        }
+        
+        return rtrim(rtrim(number_format($totalQty, 3, '.', ''), '0'), '.');
     }
 
     public function render()
