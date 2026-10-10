@@ -372,28 +372,41 @@ class ManufacturingDashboard extends Component
                     
                     // If added today, check quantity
                     if ($addedDate === $today) {
+                        // For non-super-admin: check if THIS BRANCH manufactured TODAY
+                        if ($branchIds && !$user->isSuperAdmin()) {
+                            // Check per-branch daily qty (NEW MFR today, not lifetime total)
+                            $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
+                            
+                            // Only include if this branch has a daily entry (NEW MFR today)
+                            foreach ($branchIds as $branchId) {
+                                $branchIdInt = (int)$branchId;
+                                if (isset($dailyByBranch[$branchIdInt]) && (float)$dailyByBranch[$branchIdInt] > 0) {
+                                    return true;
+                                }
+                            }
+                            
+                            // Fallback: for old products without per-branch daily tracking,
+                            // check if manufacturing happened today by looking at manufacturing_daily_qty
+                            $dailyTotal = (float)($meta['manufacturing_daily_qty'] ?? 0);
+                            if ($dailyTotal > 0) {
+                                // Now verify this branch actually manufactured something today
+                                // by checking if they have any entry in manufacturing_by_branch
+                                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                                foreach ($branchIds as $branchId) {
+                                    if (isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0) {
+                                        return true;
+                                    }
+                                }
+                            }
+                            
+                            return false;
+                        }
+
+                        // Super admin: include any product manufactured today
                         $qty = (float)($meta['manufacturing_daily_qty'] ?? $meta['manufacturing_quantity'] ?? 0);
                         if ($qty <= 0) {
                             return false;
                         }
-
-                        // If user has branch restrictions, check if their branch manufactured this
-                        if ($branchIds && !$user->isSuperAdmin()) {
-                            $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-                            if (empty($manufacturingByBranch)) {
-                                return false;
-                            }
-
-                            // Check if any of the user's branches are in the manufacturing_by_branch
-                            foreach ($branchIds as $branchId) {
-                                if (isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0) {
-                                    return true;
-                                }
-                            }
-                            return false;
-                        }
-
-                        // Super admin or no branch restrictions
                         return true;
                     }
                 } catch (\Exception $e) {
