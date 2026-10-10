@@ -403,22 +403,44 @@ class ManufacturingDashboard extends Component
         return $items->map(function ($product) use ($branchIds, $user) {
             $meta = $product->metadata ?? [];
             
-            // Extract NEW MFR (newly manufactured today) quantity based on user's branch(es)
+            // Extract Daily Manufactured quantity - prefer per-branch daily tracking
             $qty = 0;
             
             if ($branchIds && !$user->isSuperAdmin()) {
-                // Non-super-admin: show their branch's manufacturing quantity
-                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-                foreach ($branchIds as $branchId) {
-                    if (isset($manufacturingByBranch[$branchId])) {
-                        $qty += (float)$manufacturingByBranch[$branchId];
+                // Non-super-admin: show only their branch's daily manufacturing
+                // First, try per-branch daily qty (NEW system)
+                $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
+                if (!empty($dailyByBranch)) {
+                    // Use daily data if available
+                    foreach ($branchIds as $branchId) {
+                        $branchIdInt = (int)$branchId;
+                        if (isset($dailyByBranch[$branchIdInt])) {
+                            $qty += (float)$dailyByBranch[$branchIdInt];
+                        }
+                    }
+                } else {
+                    // Fallback to manufacturing_by_branch if no daily tracking yet
+                    $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                    foreach ($branchIds as $branchId) {
+                        if (isset($manufacturingByBranch[$branchId])) {
+                            $qty += (float)$manufacturingByBranch[$branchId];
+                        }
                     }
                 }
             } else {
-                // Super admin: sum all branches' manufacturing quantities
-                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-                foreach ($manufacturingByBranch as $branchQty) {
-                    $qty += (float)$branchQty;
+                // Super admin: sum all branches
+                // First, try per-branch daily qty (NEW system)
+                $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
+                if (!empty($dailyByBranch)) {
+                    foreach ($dailyByBranch as $dailyQty) {
+                        $qty += (float)$dailyQty;
+                    }
+                } else {
+                    // Fallback to manufacturing_by_branch if no daily tracking yet
+                    $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                    foreach ($manufacturingByBranch as $branchQty) {
+                        $qty += (float)$branchQty;
+                    }
                 }
             }
             
