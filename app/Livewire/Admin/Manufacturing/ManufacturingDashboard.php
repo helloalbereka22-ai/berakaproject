@@ -370,45 +370,29 @@ class ManufacturingDashboard extends Component
                     // Parse ISO8601 string or timestamp
                     $addedDate = \Carbon\Carbon::parse($meta['manufacturing_added_at'])->toDateString();
                     
-                    // If added today, check quantity
-                    if ($addedDate === $today) {
-                        // For non-super-admin: ONLY show products with per-branch daily qty for THIS BRANCH
-                        if ($branchIds && !$user->isSuperAdmin()) {
-                            // Check per-branch daily qty (NEW MFR today ONLY)
-                            $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
-                            
-                            if (empty($dailyByBranch)) {
-                                // No per-branch daily data - product not manufactured today in per-branch system
-                                return false;
-                            }
-                            
-                            // Only include if THIS BRANCH has a daily entry TODAY
-                            foreach ($branchIds as $branchId) {
-                                $branchIdInt = (int)$branchId;
-                                if (isset($dailyByBranch[$branchIdInt]) && (float)$dailyByBranch[$branchIdInt] > 0) {
-                                    return true;
-                                }
-                            }
-                            
-                            return false;
-                        }
-
-                        // Super admin: include any product with daily manufacturing data
-                        $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
-                        if (!empty($dailyByBranch)) {
-                            // Has per-branch daily data
-                            return true;
-                        }
-                        
-                        // Fallback for old products: check if manufacturing_daily_qty > 0
-                        $qty = (float)($meta['manufacturing_daily_qty'] ?? 0);
-                        return $qty > 0;
+                    // Must have manufacturing today
+                    if ($addedDate !== $today) {
+                        return false;
                     }
+                    
+                    // For non-super-admin: check if THIS BRANCH has manufacturing data
+                    if ($branchIds && !$user->isSuperAdmin()) {
+                        // Check if this branch manufactured something (use manufacturing_by_branch as source of truth)
+                        $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                        
+                        foreach ($branchIds as $branchId) {
+                            if (isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
+
+                    // Super admin: include any product manufactured today
+                    return true;
                 } catch (\Exception $e) {
                     return false;
                 }
-                
-                return false;
             })
             ->sortByDesc(function ($product) {
                 $meta = $product->metadata ?? [];
@@ -423,24 +407,18 @@ class ManufacturingDashboard extends Component
             $qty = 0;
             
             if ($branchIds && !$user->isSuperAdmin()) {
-                // Non-super-admin: sum NEW MFR quantities from their assigned branches only
-                $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
+                // Non-super-admin: show their branch's manufacturing quantity
+                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
                 foreach ($branchIds as $branchId) {
-                    $branchIdInt = (int)$branchId;
-                    if (isset($dailyByBranch[$branchIdInt])) {
-                        $qty += (float)$dailyByBranch[$branchIdInt];
+                    if (isset($manufacturingByBranch[$branchId])) {
+                        $qty += (float)$manufacturingByBranch[$branchId];
                     }
                 }
             } else {
-                // Super admin: sum NEW MFR from all branches for the day
-                $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
-                foreach ($dailyByBranch as $dailyQty) {
-                    $qty += (float)$dailyQty;
-                }
-                
-                // Graceful fallback for old products without per-branch tracking
-                if ($qty == 0) {
-                    $qty = (float)($meta['manufacturing_daily_qty'] ?? $meta['manufacturing_quantity'] ?? 0);
+                // Super admin: sum all branches' manufacturing quantities
+                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                foreach ($manufacturingByBranch as $branchQty) {
+                    $qty += (float)$branchQty;
                 }
             }
             
