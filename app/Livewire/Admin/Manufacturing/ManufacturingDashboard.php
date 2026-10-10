@@ -274,13 +274,34 @@ class ManufacturingDashboard extends Component
             ->sum('quantity');
 
         // 4. Total Used Raw Materials — sum of seed_quantity_used stored in product metadata
-        $totalUsedRaw = \App\Models\Product::withoutGlobalScopes()
+        $productsQuery = \App\Models\Product::withoutGlobalScopes()
             ->whereNotNull('metadata')
             ->when($bizId,  fn($q) => $q->where('business_id', $bizId))
             ->when($bizIds, fn($q) => $q->whereIn('business_id', $bizIds))
-            ->when($branchIds && !$user->isSuperAdmin(), fn($q) => $q->whereIn('branch_id', $branchIds))
-            ->get()
-            ->sum(fn($p) => (float)(($p->metadata ?? [])['seed_quantity_used'] ?? 0));
+            ->get();
+
+        $totalUsedRaw = $productsQuery->sum(function($p) use ($branchIds, $user) {
+            $meta = $p->metadata ?? [];
+            $seedQtyUsed = (float)($meta['seed_quantity_used'] ?? 0);
+            
+            // If user has branch restrictions and is not super admin, check if this product was manufactured by their branch
+            if ($branchIds && !$user->isSuperAdmin()) {
+                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                // Only count if user's branch has manufacturing data for this product
+                $hasBranch = false;
+                foreach ($branchIds as $branchId) {
+                    if (isset($manufacturingByBranch[(int)$branchId]) || isset($manufacturingByBranch[(string)$branchId])) {
+                        $hasBranch = true;
+                        break;
+                    }
+                }
+                if (!$hasBranch) {
+                    return 0;
+                }
+            }
+            
+            return $seedQtyUsed;
+        });
 
         return [
             'total_products'    => $totalProducts,
@@ -387,11 +408,24 @@ class ManufacturingDashboard extends Component
             })
             ->values();
 
-        return $items->map(function ($product) {
+        return $items->map(function ($product) use ($branchIds, $user) {
             $meta = $product->metadata ?? [];
             
-            // Use manufacturing_daily_qty if available, otherwise use manufacturing_quantity
-            $qty = (float)($meta['manufacturing_daily_qty'] ?? $meta['manufacturing_quantity'] ?? 0);
+            // Extract quantity based on user's branch(es)
+            $qty = 0;
+            
+            if ($branchIds && !$user->isSuperAdmin()) {
+                // Non-super-admin: sum quantities from their assigned branches only
+                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                foreach ($branchIds as $branchId) {
+                    if (isset($manufacturingByBranch[$branchId])) {
+                        $qty += (float)$manufacturingByBranch[$branchId];
+                    }
+                }
+            } else {
+                // Super admin: use manufacturing_daily_qty for total added today
+                $qty = (float)($meta['manufacturing_daily_qty'] ?? $meta['manufacturing_quantity'] ?? 0);
+            }
             
             return [
                 'product_id'       => $product->id,
