@@ -2,18 +2,17 @@
     
     <div class="text-center mb-6">
         <?php
-            $logoPath = app(\App\Services\SettingsService::class)->get('system_logo_path', '');
+            // Get system logo from database
+            $logoPath = \Illuminate\Support\Facades\DB::table('settings')
+                ->where('key', 'system_logo_path')
+                ->whereNull('business_id')
+                ->whereNull('branch_id')
+                ->value('value') ?? 'system/oil-factory.png';
         ?>
-        <?php if($logoPath && \Illuminate\Support\Facades\Storage::disk('public')->exists($logoPath)): ?>
-            <img src="<?php echo e(asset('storage/' . $logoPath)); ?>" 
-                 alt="Al-Baraka Logo"
-                 class="h-16 w-16 rounded-2xl object-cover shadow-2xl shadow-orange-900/50 mb-4 mx-auto">
-        <?php else: ?>
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-600 to-red-600 shadow-2xl shadow-orange-900/50 mb-4 relative">
-                <span class="text-white font-black text-2xl">A</span>
-                <div class="absolute inset-0 rounded-2xl bg-white/20 animate-pulse"></div>
-            </div>
-        <?php endif; ?>
+        
+        <img src="<?php echo e(asset('storage/' . $logoPath)); ?>" 
+             alt="Al-Baraka Logo"
+             class="h-24 w-auto rounded-2xl object-contain shadow-2xl shadow-orange-900/50 mb-4 mx-auto max-w-xs">
         <h1 class="text-3xl font-black bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 bg-clip-text text-transparent tracking-tight">Al-Baraka</h1>
         <p class="text-xs font-semibold text-gray-500 mt-1">Business Management System</p>
     </div>

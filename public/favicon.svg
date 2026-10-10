@@ -8,6 +8,24 @@
   </defs>
   <!-- Background -->
   <rect width="100" height="100" fill="url(#albarakaGradient)" rx="20"/>
-  <!-- Al-Baraka "A" Logo -->
-  <text x="50" y="70" font-size="70" font-weight="900" fill="white" text-anchor="middle" font-family="Arial, sans-serif">A</text>
+  
+  <!-- Oil Factory Machine Simplified Icon -->
+  <!-- Base/Motor -->
+  <rect x="20" y="60" width="25" height="28" fill="white" rx="2"/>
+  <!-- Motor details -->
+  <circle cx="25" cy="70" r="3" fill="#ea580c"/>
+  <circle cx="35" cy="70" r="3" fill="#ea580c"/>
+  <rect x="20" y="74" width="25" height="3" fill="#ea580c"/>
+  
+  <!-- Hopper/Container -->
+  <path d="M 50 35 L 70 45 L 70 75 L 50 75 Z" fill="white" stroke="#ea580c" stroke-width="1.5"/>
+  <!-- Hopper top opening -->
+  <ellipse cx="60" cy="35" rx="12" ry="6" fill="#f59e0b" stroke="#ea580c" stroke-width="1"/>
+  
+  <!-- Pipe/Nozzle -->
+  <rect x="68" y="50" width="8" height="20" fill="white" stroke="#ea580c" stroke-width="1"/>
+  <polygon points="74,68 76,68 75,72" fill="white" stroke="#ea580c" stroke-width="1"/>
+  
+  <!-- Connection rod -->
+  <line x1="45" y1="70" x2="50" y2="55" stroke="#ea580c" stroke-width="2"/>
 </svg>

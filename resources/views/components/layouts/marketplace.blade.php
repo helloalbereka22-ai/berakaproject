@@ -205,7 +205,7 @@
                 </div>
 
                 {{-- Login Button --}}
-                <a href="/albareka/public/login"
+                <a href="{{ route('login') }}"
                    class="hidden sm:flex items-center gap-2 px-5 py-2.5 text-base font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors duration-200">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/>
@@ -276,7 +276,7 @@
                     @livewire('public.language-switcher')
                 </div>
                 
-                <a href="/albareka/public/login" class="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-slate-900 text-white text-base font-semibold rounded-lg hover:bg-slate-800 transition-colors">
+                <a href="{{ route('login') }}" class="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-slate-900 text-white text-base font-semibold rounded-lg hover:bg-slate-800 transition-colors">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/>
                     </svg>

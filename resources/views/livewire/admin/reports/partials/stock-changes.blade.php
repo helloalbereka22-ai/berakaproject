@@ -78,7 +78,8 @@
                         <th class="px-4 py-3 text-left text-slate-400 font-semibold text-xs uppercase tracking-wide">Action / Change</th>
                         <th class="px-4 py-3 text-right text-slate-400 font-semibold text-xs uppercase tracking-wide">Qty Change</th>
                         <th class="px-4 py-3 text-left text-slate-400 font-semibold text-xs uppercase tracking-wide">Notes / Reference</th>
-                        <th class="px-4 py-3 text-left text-slate-400 font-semibold text-xs uppercase tracking-wide">Date</th>
+                        {{-- Date column hidden --}}
+                        {{-- <th class="px-4 py-3 text-left text-slate-400 font-semibold text-xs uppercase tracking-wide">Date</th> --}}
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-800/50">
@@ -108,6 +109,10 @@
                                 'purchase_return' => 'Purchase Return',
                                 'sale_return' => 'Sale Return',
                                 'distribution' => 'Distribution',
+                                'manufactured_quantity_adjusted' => 'Manufactured Qty Edited',
+                                'manufactured_quantity_deleted' => 'Manufactured Qty Deleted',
+                                'seed_used_adjusted' => 'Seed Used Edited',
+                                'seed_used_deleted' => 'Seed Used Deleted',
                                 default => ucwords(str_replace('_', ' ', $movement->movement_type)),
                             };
                         @endphp
@@ -141,13 +146,14 @@
                             <td class="px-4 py-3 text-slate-400 text-xs max-w-xs truncate" title="{{ $movement->notes ?? '—' }}">
                                 {{ $movement->notes ?? '—' }}
                             </td>
-                            <td class="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
+                            {{-- Date column hidden --}}
+                            {{-- <td class="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
                                 {{ \Carbon\Carbon::parse($movement->moved_at)->format('M d, Y H:i') }}
-                            </td>
+                            </td> --}}
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="px-4 py-8 text-center text-slate-500">
+                            <td colspan="7" class="px-4 py-8 text-center text-slate-500">
                                 <p class="text-sm">No stock changes found for the selected period.</p>
                             </td>
                         </tr>

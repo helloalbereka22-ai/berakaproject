@@ -617,6 +617,7 @@ class ReportService
             ->join('branches',   'purchases.branch_id',   '=', 'branches.id')
             ->leftJoin('users',  'purchases.created_by',  '=', 'users.id')
             ->where('purchases.status', \App\Models\Purchase::STATUS_COMPLETED)
+            ->whereRaw("(purchases.notes IS NULL OR (purchases.notes NOT LIKE 'Transfer from%' AND purchases.notes NOT LIKE 'from_branch:%'))")
             ->when(!empty($filters['business_id']), fn($q) =>
                 $q->where('purchases.business_id', $filters['business_id'])
             )

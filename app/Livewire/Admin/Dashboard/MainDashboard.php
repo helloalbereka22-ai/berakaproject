@@ -206,14 +206,16 @@ class MainDashboard extends Component
             // Daily transfers — count transfer_in movements today (same as Super Admin)
             $dailyTransfers = DB::table('stock_movements')
                 ->whereDate('moved_at', $today)
-                ->where('reference_type', 'transfer')
+                ->where('reference_type', 'StockTransfer')
                 ->where('direction', 'in')
+                ->whereIn('business_id', $businessIds)
                 ->count();
 
             // Total transfers — count all transfer_in movements ever (same as Super Admin)
             $totalTransfers = DB::table('stock_movements')
-                ->where('reference_type', 'transfer')
+                ->where('reference_type', 'StockTransfer')
                 ->where('direction', 'in')
+                ->whereIn('business_id', $businessIds)
                 ->count();
 
             // Low stock & out of stock — use branch_id directly (matches stock_movements structure)
@@ -298,7 +300,7 @@ class MainDashboard extends Component
 
         $dailyTransfers = DB::table('stock_movements')
             ->whereDate('moved_at', $today)
-            ->where('reference_type', 'transfer')
+            ->where('reference_type', 'StockTransfer')
             ->where('direction', 'in')
             ->count();
 
@@ -322,7 +324,7 @@ class MainDashboard extends Component
             ->sum(fn($p) => (float)(($p->metadata ?? [])['manufacturing_quantity'] ?? 0));
 
         $totalTransfers = DB::table('stock_movements')
-            ->where('reference_type', 'transfer')
+            ->where('reference_type', 'StockTransfer')
             ->where('direction', 'in')
             ->count();
 

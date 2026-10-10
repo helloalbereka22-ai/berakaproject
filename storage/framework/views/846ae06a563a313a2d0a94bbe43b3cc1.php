@@ -11,6 +11,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Al-Baraka Business Group</title>
     <meta name="description" content="Login to Albareka Enterprise Management Platform">
+    
+    
+    <?php
+        // Get system logo from database for favicon
+        $faviconPath = \Illuminate\Support\Facades\DB::table('settings')
+            ->where('key', 'system_logo_path')
+            ->whereNull('business_id')
+            ->whereNull('branch_id')
+            ->value('value');
+        $faviconUrl = $faviconPath ? asset('storage/' . $faviconPath) : asset('favicon.svg');
+    ?>
+    <link rel="icon" type="image/svg+xml" href="<?php echo e($faviconUrl); ?>">
+    <link rel="apple-touch-icon" href="<?php echo e($faviconUrl); ?>">
+    <link rel="manifest" href="<?php echo e(asset('manifest.json')); ?>">
+    <meta name="theme-color" content="#1e3a8a">
 
     <?php if(file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot'))): ?>
         <?php echo app('Illuminate\Foundation\Vite')(['resources/css/app.css', 'resources/js/app.js']); ?>

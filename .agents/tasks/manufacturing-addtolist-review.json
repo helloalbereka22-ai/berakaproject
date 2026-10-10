@@ -1,0 +1,14 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "issue": "Branch filter bypassed when filterBranchId is string '0'",
+      "description": "Lines 825–873 (stock checks) and lines 700–745 (deductRawMaterial) use `when($this->filterBranchId)` to conditionally apply branch filters. Since `$this->filterBranchId` is a string (line 36), string '0' is falsy and causes the branch filter to be skipped, potentially querying stock from all branches instead of the user's assigned branch. This allows stock availability checks to pass even when the user's branch has insufficient inventory. Fix: cast to int — `when((int)$this->filterBranchId > 0)`."
+    },
+    {
+      "issue": "Silent failure if form fields don't have wire:model bindings",
+      "description": "The form reset (lines 920–928) clears all component properties, but if the Blade view doesn't bind all fields with `wire:model`, the UI won't clear despite the property reset. Audit: confirm that form fields in user-dashboard.blade.php for salesProductId, salesQuantity, bottleId, seedId, seedQuantity, and packingId all have `wire:model` or `wire:model.live` directives. Seed and product fields are confirmed bound; bottle and packing selects should be checked."
+    }
+  ],
+  "reviewDoc": "c:\\xammpp82\\htdocs\\albarekaaaaaa\\.agents\\tasks\\manufacturing-addtolist-review.md"
+}

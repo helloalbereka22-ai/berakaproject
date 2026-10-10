@@ -47,7 +47,7 @@
         <div class="absolute bottom-0 inset-x-0 h-1 bg-gradient-to-r from-sky-500/50 to-transparent"></div>
     </div>
 
-    {{-- Daily Manufactured - HIDDEN
+    {{-- Daily Manufactured --}}
     <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative overflow-hidden">
         <div class="flex items-start justify-between">
             <div>
@@ -63,7 +63,6 @@
         </div>
         <div class="absolute bottom-0 inset-x-0 h-1 bg-gradient-to-r from-purple-500/50 to-transparent"></div>
     </div>
-    --}}
 
     {{-- Total Raw Materials --}}
     <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative overflow-hidden">

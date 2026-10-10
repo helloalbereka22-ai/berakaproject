@@ -5,6 +5,8 @@ namespace App\Livewire\Admin\Materials;
 use App\Models\Business;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\Branch;
+use App\Models\StockMovement;
 use App\Services\AuthorizationService;
 use App\Services\ProductService;
 use Livewire\Attributes\Layout;
@@ -114,12 +116,36 @@ class MaterialIndex extends Component
         $user  = auth()->user();
         $types = $this->activeTypes();
 
-        $query = Product::withoutGlobalScopes()
+        // Get all business IDs the user has access to
+        $accessibleBusinessIds = $user->isSuperAdmin() 
+            ? Business::pluck('id')->toArray()
+            : $user->assignedBusinessIds();
+
+        // Get the user's assigned branch IDs
+        // If user has NO specific branches but IS assigned to businesses,
+        // get ALL branches for those businesses
+        $userBranchIds = $user->isSuperAdmin()
+            ? Branch::pluck('id')->toArray()
+            : $user->assignedBranchIds();
+        
+        // If user has no explicit branch assignments, get branches for their assigned businesses
+        if (empty($userBranchIds) && !empty($accessibleBusinessIds)) {
+            $userBranchIds = Branch::whereIn('business_id', $accessibleBusinessIds)
+                ->pluck('id')
+                ->toArray();
+        }
+
+        // If user has only ONE business assigned, filter to that business automatically
+        // This prevents manufacturing staff from seeing other branches' data
+        $isUserRestrictedToOneBusiness = (count($accessibleBusinessIds) === 1);
+        if ($isUserRestrictedToOneBusiness && empty($this->businessId)) {
+            $this->businessId = (string) $accessibleBusinessIds[0];
+        }
+
+        $baseQuery = Product::withoutGlobalScopes()
             ->with(['category', 'business'])
             ->whereIn('type', $types)
-            ->when(!$user->isSuperAdmin(), fn($q) =>
-                $q->whereIn('business_id', $user->assignedBusinessIds())
-            )
+            ->whereIn('business_id', $accessibleBusinessIds)
             ->when($this->search,     fn($q) => $q->search($this->search))
             ->when($this->businessId, fn($q) => $q->where('business_id', $this->businessId))
             ->when($this->categoryId, fn($q) => $q->where('category_id', $this->categoryId))
@@ -127,21 +153,45 @@ class MaterialIndex extends Component
             ->when($this->status,     fn($q) => $q->where('status', $this->status))
             ->orderBy('name');
 
-        // Aggregate totals for header KPIs
-        $totalQuery = Product::withoutGlobalScopes()
-            ->whereIn('type', $types)
-            ->when(!$user->isSuperAdmin(), fn($q) =>
-                $q->whereIn('business_id', $user->assignedBusinessIds())
-            )
-            ->when($this->businessId, fn($q) => $q->where('business_id', $this->businessId));
+        // Fetch materials and calculate stock per user's branches only
+        $materialsCollection = $baseQuery->get();
 
+        // Calculate per-branch stock for each material
+        $materialsWithBranchStock = $materialsCollection->map(function ($product) use ($userBranchIds) {
+            // Calculate stock only from the user's assigned branches
+            $branchStock = StockMovement::where('item_id', $product->id)
+                ->where('item_type', 'product')
+                ->whereIn('branch_id', $userBranchIds)
+                ->get()
+                ->reduce(function ($carry, $mov) {
+                    return $carry + ($mov->direction === 'in' ? $mov->quantity : -$mov->quantity);
+                }, 0);
+            
+            // Override the current_stock with branch-filtered value
+            $product->current_stock = (float) $branchStock;
+            return $product;
+        })->values();
+
+        // Manually paginate the collection
+        $page = request()->query('page', 1);
+        $perPage = 25;
+        $paginatedItems = $materialsWithBranchStock->forPage($page, $perPage);
+        $materials = new \Illuminate\Pagination\LengthAwarePaginator(
+            $paginatedItems,
+            $materialsWithBranchStock->count(),
+            $perPage,
+            $page,
+            ['path' => request()->url(), 'query' => request()->query()]
+        );
+
+        // Aggregate totals for header KPIs across accessible businesses
         $summaryTotals = [
             'raw'       => Product::withoutGlobalScopes()->where('type', Product::TYPE_RAW_MATERIAL)
-                ->when(!$user->isSuperAdmin(), fn($q) => $q->whereIn('business_id', $user->assignedBusinessIds()))
+                ->whereIn('business_id', $accessibleBusinessIds)
                 ->when($this->businessId, fn($q) => $q->where('business_id', $this->businessId))
                 ->count(),
             'packaging' => Product::withoutGlobalScopes()->where('type', Product::TYPE_PACKING_MATERIAL)
-                ->when(!$user->isSuperAdmin(), fn($q) => $q->whereIn('business_id', $user->assignedBusinessIds()))
+                ->whereIn('business_id', $accessibleBusinessIds)
                 ->when($this->businessId, fn($q) => $q->where('business_id', $this->businessId))
                 ->count(),
         ];
@@ -149,6 +199,7 @@ class MaterialIndex extends Component
         // Distinct units for filter dropdown
         $units = Product::withoutGlobalScopes()
             ->whereIn('type', [Product::TYPE_RAW_MATERIAL, Product::TYPE_PACKING_MATERIAL])
+            ->whereIn('business_id', $accessibleBusinessIds)
             ->whereNotNull('unit')
             ->distinct()
             ->orderBy('unit')
@@ -156,7 +207,7 @@ class MaterialIndex extends Component
             ->toArray();
 
         return view('livewire.admin.materials.index', [
-            'materials'     => $query->paginate(25),
+            'materials'     => $materials,
             'summaryTotals' => $summaryTotals,
             'units'         => $units,
             'statuses'      => Product::STATUSES,

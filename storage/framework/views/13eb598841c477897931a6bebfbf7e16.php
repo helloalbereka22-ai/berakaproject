@@ -100,6 +100,15 @@ unset($__errorArgs, $__bag); ?>
                         <div class="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3 text-emerald-400 font-mono text-sm">
                             <?php echo e(number_format($this->getSellAvailableQuantity(), 3)); ?> units
                         </div>
+                        <?php
+                            $selectedProduct = \App\Models\Product::find($this->sellProductId);
+                        ?>
+                        <?php if($selectedProduct): ?>
+                        <div class="mt-2 text-xs text-slate-400">
+                            <span class="font-semibold">Manufactured By:</span>
+                            <span class="text-slate-300"><?php echo e($this->getManufacturedByInfo($selectedProduct)); ?></span>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div>
                         <label class="block text-sm font-semibold text-slate-400 mb-2">Sell Quantity *</label>
@@ -453,7 +462,7 @@ unset($__errorArgs, $__bag); ?>
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                         </svg>
                     </div>
-                    <h3 class="text-sm font-semibold text-white">Available Seed</h3>
+                    <h3 class="text-sm font-semibold text-white">Available Seed <span class="text-red-400">*</span></h3>
                 </div>
                 <div class="p-5">
                     <?php if(!$salesCategoryId): ?>
@@ -520,11 +529,11 @@ unset($__errorArgs, $__bag); ?>
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                         </svg>
                     </div>
-                    <h3 class="text-sm font-semibold text-white">Packing Material</h3>
+                    <h3 class="text-sm font-semibold text-white">Packing Material <span class="text-red-400">*</span></h3>
                 </div>
                 <div class="p-5">
                     <label class="block text-xs font-medium text-slate-400 mb-1.5">Select Packing Material</label>
-                    <select wire:model="packingId"
+                    <select wire:model.live="packingId"
                         class="w-full bg-slate-800/50 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-colors">
                         <option value="">— Select Packing Material —</option>
                         <?php $__empty_1 = true; $__currentLoopData = $this->packingProducts; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $packing): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); $__empty_1 = false; ?>
@@ -553,6 +562,7 @@ unset($__errorArgs, $__bag); ?>
         
         <div class="flex justify-end">
             <button type="button" wire:click="addSalesItem" wire:loading.attr="disabled"
+                <?php if($salesProductId && $salesQuantity && $seedId && $packingId): ?> <?php else: ?> disabled <?php endif; ?>
                 class="group inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white text-sm font-bold rounded-xl shadow-lg shadow-emerald-500/25 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
                 <svg wire:loading wire:target="addSalesItem" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -576,7 +586,7 @@ unset($__errorArgs, $__bag); ?>
                         <svg class="w-5 h-5 text-emerald-500/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
-                        <span class="font-mono text-lg font-bold text-emerald-400"><?php echo e(now()->format('d M Y')); ?></span>
+                        <input type="date" wire:model.live="filterFromDate" class="bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors font-mono">
                     </div>
                 </div>
 
@@ -595,7 +605,7 @@ unset($__errorArgs, $__bag); ?>
                 <div class="text-right">
                     <p class="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-2">To Date</p>
                     <div class="flex items-center justify-end gap-2">
-                        <span class="font-mono text-lg font-bold text-emerald-400"><?php echo e(now()->format('d M Y')); ?></span>
+                        <input type="date" wire:model.live="filterToDate" class="bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors font-mono text-right">
                         <svg class="w-5 h-5 text-emerald-500/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
@@ -648,9 +658,12 @@ unset($__errorArgs, $__bag); ?>
                         <tr class="bg-slate-800/30 border-b border-slate-700/50">
                             <th class="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Item Name</th>
                             <th class="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Category</th>
-                            <th class="text-right px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Qty</th>
-                            <th class="text-right px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Used Seed Qty</th>
-                            <th class="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Date Added</th>
+                            <th class="text-right px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">New Mfr</th>
+                            <th class="text-right px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Manufactured Qty</th>
+                            <th class="text-right px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Used Qty</th>
+                            <th class="text-right px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Seed Used</th>
+                            <th class="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Username</th>
+                            <th class="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Branch</th>
                             <th class="text-center px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
@@ -705,13 +718,50 @@ unset($__errorArgs, $__bag); ?>
                                 </span>
                             </td>
                             <td class="px-6 py-4 text-right">
-                                <span class="font-mono text-emerald-400 font-semibold"><?php echo e($mfgQtyFormatted); ?></span>
+                                <?php
+                                    $newMfrQty = isset($meta['new_mfr_quantity']) ? (float)$meta['new_mfr_quantity'] : 0;
+                                ?>
+                                <span class="font-mono text-purple-400 font-semibold"><?php echo e(rtrim(rtrim(number_format($newMfrQty, 3, '.', ''), '0'), '.')); ?></span>
                             </td>
                             <td class="px-6 py-4 text-right">
-                                <?php if($seedQty !== null && $seedQty > 0): ?>
+                                <span class="font-mono text-blue-400 font-semibold"><?php echo e($this->getManufacturedQtyForUser($item)); ?></span>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <?php
+                                    // Used Qty should show the current seed deduction (Deduct Seed Qty from form)
+                                    $usedSeedQty = isset($meta['current_seed_deduction']) ? (float)$meta['current_seed_deduction'] : 0;
+                                    $usedSeedUnit = $meta['seed_unit'] ?? 'kg';
+                                ?>
+                                <span class="font-mono text-orange-400 font-semibold">
+                                    <?php echo e(rtrim(rtrim(number_format($usedSeedQty, 3, '.', ''), '0'), '.')); ?>
+
+                                    <?php if($usedSeedUnit): ?>
+                                    <span class="text-slate-500 text-xs font-normal"><?php echo e($usedSeedUnit); ?></span>
+                                    <?php endif; ?>
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <?php
+                                    // Get seed quantity for THIS BRANCH ONLY
+                                    $mfgBranchId = isset($meta['manufactured_by_branch_id']) ? (int)$meta['manufactured_by_branch_id'] : null;
+                                    $branchSeedQty = null;
+                                    $seedUnit = 'kg';
+                                    $seedName = null;
+                                    
+                                    if ($mfgBranchId && isset($meta['seed_by_branch'][$mfgBranchId])) {
+                                        $branchSeedQty = (float)$meta['seed_by_branch'][$mfgBranchId];
+                                    } else {
+                                        // Fallback to old metadata for backward compatibility
+                                        $branchSeedQty = isset($meta['seed_quantity_used']) ? (float)$meta['seed_quantity_used'] : null;
+                                    }
+                                    
+                                    $seedUnit = $meta['seed_unit'] ?? 'kg';
+                                    $seedName = $meta['seed_name'] ?? null;
+                                ?>
+                                <?php if($branchSeedQty !== null && $branchSeedQty > 0): ?>
                                     <div class="flex flex-col items-end">
                                         <span class="font-mono text-amber-400 font-semibold">
-                                            <?php echo e(rtrim(rtrim(number_format($seedQty, 3, '.', ''), '0'), '.')); ?>
+                                            <?php echo e(rtrim(rtrim(number_format($branchSeedQty, 3, '.', ''), '0'), '.')); ?>
 
                                             <span class="text-slate-500 text-xs font-normal"> <?php echo e($seedUnit); ?></span>
                                         </span>
@@ -724,7 +774,17 @@ unset($__errorArgs, $__bag); ?>
                                 <?php endif; ?>
                             </td>
                             <td class="px-6 py-4">
-                                <span class="text-slate-400 text-sm"><?php echo e($mfgDate); ?></span>
+                                <?php
+                                    $mfgUsername = isset($meta['manufactured_by_username']) ? $meta['manufactured_by_username'] : 'Unknown';
+                                ?>
+                                <span class="text-slate-300 text-sm"><?php echo e($mfgUsername); ?></span>
+                            </td>
+                            <td class="px-6 py-4">
+                                <?php
+                                    $mfgBranchId = isset($meta['manufactured_by_branch_id']) ? (int)$meta['manufactured_by_branch_id'] : null;
+                                    $mfgBranch = $mfgBranchId ? \App\Models\Branch::find($mfgBranchId)?->name : 'Unknown';
+                                ?>
+                                <span class="text-slate-300 text-sm"><?php echo e($mfgBranch ?: '—'); ?></span>
                             </td>
                             <td class="px-6 py-4">
                                 <div class="flex items-center justify-center gap-2">
@@ -735,19 +795,14 @@ unset($__errorArgs, $__bag); ?>
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                         </svg>
                                     </button>
-                                    <button wire:click="openDeleteConfirmModal(<?php echo e($item->id); ?>)"
-                                        class="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
-                                        title="Delete">
-                                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                        </svg>
-                                    </button>
+                                    
+                                    
                                 </div>
                             </td>
                         </tr>
                         <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); if ($__empty_1): ?>
                         <tr>
-                            <td colspan="6" class="px-6 py-16 text-center">
+                            <td colspan="9" class="px-6 py-16 text-center">
                                 <div class="flex flex-col items-center gap-3">
                                     <div class="p-4 bg-slate-800/50 rounded-full">
                                         <svg class="w-8 h-8 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -801,15 +856,60 @@ unset($__errorArgs, $__bag); ?>
         <?php endif; ?>
 
         <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1.5">Quantity *</label>
-            <input wire:model="editQuantity" type="number" step="0.001" placeholder="0.000"
-                class="w-full bg-slate-800/50 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono">
+            <label class="block text-xs font-medium text-slate-400 mb-1.5">Item Name *</label>
+            <input wire:model="editItemName" type="text" placeholder="Item name..."
+                class="w-full bg-slate-800/50 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+            <?php $__errorArgs = ['editItemName'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?> <p class="text-red-400 text-xs mt-1"><?php echo e($message); ?></p> <?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1.5">New Mfr *</label>
+                <input wire:model="editNewMfrQty" type="number" step="0.001" placeholder="0.000"
+                    class="w-full bg-slate-800/50 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 font-mono">
+                <?php $__errorArgs = ['editNewMfrQty'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?> <p class="text-red-400 text-xs mt-1"><?php echo e($message); ?></p> <?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1.5">Used Qty *</label>
+                <input wire:model="editUsedQty" type="number" step="0.001" placeholder="0.000"
+                    class="w-full bg-slate-800/50 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 font-mono">
+                <?php $__errorArgs = ['editUsedQty'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?> <p class="text-red-400 text-xs mt-1"><?php echo e($message); ?></p> <?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?>
+            </div>
         </div>
 
         <div>
             <label class="block text-xs font-medium text-slate-400 mb-1.5">Reason for Update *</label>
             <textarea wire:model="editReason" rows="2" placeholder="Explain the changes..."
                 class="w-full bg-slate-800/50 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none"></textarea>
+            <?php $__errorArgs = ['editReason'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?> <p class="text-red-400 text-xs mt-1"><?php echo e($message); ?></p> <?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?>
         </div>
 
         <div class="flex justify-end gap-3 pt-4">

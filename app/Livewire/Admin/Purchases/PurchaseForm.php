@@ -16,6 +16,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 use Livewire\WithPagination;
+use Carbon\Carbon;
 
 #[Layout('components.layouts.admin')]
 class PurchaseForm extends Component
@@ -29,7 +30,7 @@ class PurchaseForm extends Component
     public string $category_id   = '';
     public string $product_id    = '';
     public string $unit          = '';
-    public string $quantity      = '1';
+    public string $quantity      = '';
     public        $image         = null;  // optional product image upload
     public string $unit_price    = '';
     public string $selling_price = '';
@@ -389,6 +390,18 @@ class PurchaseForm extends Component
         $this->businesses = $user->isSuperAdmin()
             ? Business::active()->orderBy('name')->get(['id', 'name'])->toArray()
             : Business::whereIn('id', $user->assignedBusinessIds())->orderBy('name')->get(['id', 'name'])->toArray();
+        
+        // Set default filter to user's first business
+        if (!empty($this->businesses)) {
+            $this->filterBusinessId = (string) $this->businesses[0]['id'];
+            // Trigger the business filter update to load branches
+            $this->updatedFilterBusinessId();
+            
+            // Also set default branch to first available branch
+            if (!empty($this->filterBranches)) {
+                $this->filterBranchId = (string) $this->filterBranches[0]['id'];
+            }
+        }
     }
 
     // ── Cascade: Business → Branches + Categories ─────────────────────────
@@ -640,20 +653,22 @@ class PurchaseForm extends Component
                 $product->status = 'active';
                 $product->is_marketplace_visible = true;
 
+                // Initialize metadata for manufacturing tracking
+                $meta = $product->metadata ?? [];
+                
                 // Save image if uploaded
                 if ($this->image) {
                     $imagePath = $this->image->store('products', 'public');
                     $product->image_path = $imagePath;
-                    $meta = $product->metadata ?? [];
                     $meta['images'] = [[
                         'path'       => $imagePath,
                         'alt'        => $product->name,
                         'sort_order' => 0,
                         'is_primary' => true,
                     ]];
-                    $product->metadata = $meta;
                 }
-
+                
+                $product->metadata = $meta;
                 $product->save();
 
                 session()->flash('success', 'Product recorded. Quantity will be added by manufacturer.');
@@ -727,7 +742,7 @@ class PurchaseForm extends Component
             // Reset form fields
             $this->product_id    = '';
             $this->unit          = '';
-            $this->quantity      = '1';
+            $this->quantity      = '';
             $this->unit_price    = '';
             $this->selling_price = '';
             $this->image         = null;
@@ -984,28 +999,100 @@ class PurchaseForm extends Component
             ->orderByDesc('id')
             ->get();
 
-        // Group purchases by product_id + branch_id to consolidate duplicates
-        $grouped = $purchases->groupBy(function ($purchase) {
-            return $purchase->product_id . '_' . $purchase->branch_id;
-        })->map(function ($group) {
-            // Take the latest purchase record (for UI consistency)
-            $latestPurchase = $group->first();
+        // Also include manufactured products (those with manufacturing_quantity > 0)
+        $manufactureredProducts = collect();
+        if ($this->filterBusinessId) {
+            $businessId = (int) $this->filterBusinessId;
+            $branchId = $this->filterBranchId ? (int) $this->filterBranchId : null;
+            $categoryId = $this->filterCategoryId ? (int) $this->filterCategoryId : null;
+            $productId = $this->filterProductId ? (int) $this->filterProductId : null;
             
-            // Sum all quantities for this product in this branch
-            $totalPurchaseQty = (float) $group->sum('quantity');
+            $products = Product::withoutGlobalScopes()
+                ->where('business_id', $businessId)
+                ->where('status', 'active')
+                ->when($categoryId, fn($q) => $q->where('category_id', $categoryId))
+                ->when($productId, fn($q) => $q->where('id', $productId))
+                ->get();
+            
+            $manufactureredProducts = $products
+                ->filter(function ($product) {
+                    $meta = $product->metadata ?? [];
+                    return isset($meta['manufacturing_quantity']) && (float)$meta['manufacturing_quantity'] > 0;
+                })
+                ->filter(function ($product) use ($branchId) {
+                    // Filter by branch if one is selected
+                    if (!$branchId) return true;
+                    
+                    $meta = $product->metadata ?? [];
+                    $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                    
+                    // Check if this product was manufactured by the selected branch
+                    return isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0;
+                })
+                ->map(function ($product) use ($branchId) {
+                    $meta = $product->metadata ?? [];
+                    
+                    // Get manufacturing quantity for this branch
+                    if ($branchId) {
+                        $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                        $mfgQty = (float) ($manufacturingByBranch[$branchId] ?? 0);
+                    } else {
+                        $mfgQty = (float) ($meta['manufacturing_quantity'] ?? 0);
+                    }
+                    
+                    // Get the branch object
+                    $branch = Branch::find($branchId);
+                    
+                    // Create synthetic purchase object for manufactured products
+                    return (object)[
+                        'id'                    => 'mfg_' . $product->id,
+                        'product_id'            => $product->id,
+                        'product'               => $product,
+                        'business_id'           => $product->business_id,
+                        'branch_id'             => $branchId,
+                        'branch'                => $branch,
+                        'category_id'           => $product->category_id,
+                        'category'              => $product->category,
+                        'quantity'              => $mfgQty,
+                        'total_purchase_qty'    => $mfgQty,
+                        'unit'                  => $product->unit ?? 'pcs',
+                        'unit_price'            => $product->cost_price ?? 0,
+                        'purchase_type'         => 'product',
+                        'purchase_date'         => isset($meta['manufacturing_added_at']) 
+                            ? \Carbon\Carbon::parse($meta['manufacturing_added_at'])->toDateTimeImmutable()
+                            : now(),
+                        'current_available_qty' => $mfgQty,
+                        'purchase_count'        => 1,
+                        'is_manufactured'       => true,
+                    ];
+                });
+        }
+
+        // Merge regular purchases with manufactured products
+        $allItems = collect($purchases)->merge($manufactureredProducts);
+
+        // Group by product_id + branch_id to consolidate duplicates
+        $grouped = $allItems->groupBy(function ($item) {
+            return $item->product_id . '_' . $item->branch_id;
+        })->map(function ($group) {
+            // Take the first item (prefer Purchase records over synthetic objects)
+            $latestItem = $group->sortBy(fn($i) => isset($i->is_manufactured) ? 1 : 0)->first();
+            
+            // Sum all quantities for this product
+            $totalQty = (float) $group->sum('quantity');
             
             // Add consolidated data
-            $latestPurchase->total_purchase_qty = $totalPurchaseQty;
-            $latestPurchase->purchase_count = $group->count();
+            $latestItem->total_purchase_qty = $totalQty;
+            $latestItem->purchase_count = $group->count();
             
             // Calculate current available qty
-            if ($latestPurchase->branch_id && $latestPurchase->product_id) {
-                $latestPurchase->current_available_qty = $this->getProductAvailableStock($latestPurchase->product_id);
+            if ($latestItem->product_id) {
+                $latestItem->current_available_qty = $this->getProductAvailableStock($latestItem->product_id);
             } else {
-                $latestPurchase->current_available_qty = 0;
+                $latestItem->current_available_qty = 0;
             }
             
-            return $latestPurchase;
+            return $latestItem;
         })->values();
 
         // Sort by purchase date (descending) and paginate manually

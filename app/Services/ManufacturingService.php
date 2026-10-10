@@ -310,6 +310,20 @@ class ManufacturingService
                 'status'                => FinishedGood::STATUS_AVAILABLE,
             ]);
 
+            // Validate location before recording movement
+            $fgLocation = Location::find($finishedGoodsLocationId);
+            if (!$fgLocation) {
+                throw new \RuntimeException(
+                    "Cannot record production output: Location {$finishedGoodsLocationId} does not exist."
+                );
+            }
+            if (!$fgLocation->branch) {
+                throw new \RuntimeException(
+                    "Cannot record production output: Location {$fgLocation->id} ({$fgLocation->name}) "
+                    . "does not have a valid branch assignment."
+                );
+            }
+
             // Record the production output movement using the finished good's product
             $this->inventory->recordMovement(
                 $finishedGoodsLocationId, 'product',

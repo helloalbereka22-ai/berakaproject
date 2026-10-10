@@ -2,31 +2,8 @@
 <div class="space-y-5 pt-4">
 
     @php
-        $rows        = $reportData instanceof \Illuminate\Support\Collection ? $reportData : collect($reportData);
-        $totalMfgQty = $rows->sum('mfg_qty');
-        $totalValue  = $rows->sum('total_value');
-        $totalSeed   = $rows->sum('seed_qty_used');
+        $rows = $reportData instanceof \Illuminate\Support\Collection ? $reportData : collect($reportData);
     @endphp
-
-    {{-- Summary cards --}}
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Total Products</p>
-            <p class="text-2xl font-extrabold text-indigo-400">{{ $rows->count() }}</p>
-        </div>
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Total Manufactured</p>
-            <p class="text-2xl font-extrabold text-violet-400">{{ number_format($totalMfgQty, 2) }}</p>
-        </div>
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Total Seed Used</p>
-            <p class="text-2xl font-extrabold text-amber-400">{{ number_format($totalSeed, 2) }}</p>
-        </div>
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Total Value (ETB)</p>
-            <p class="text-2xl font-extrabold text-emerald-400">{{ number_format($totalValue, 2) }}</p>
-        </div>
-    </div>
 
     {{-- Table --}}
     <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
@@ -49,82 +26,86 @@
             <table class="w-full text-sm">
                 <thead>
                     <tr class="bg-slate-950/60 border-b border-slate-800 text-[11px] uppercase tracking-widest text-slate-400">
-                        <th class="text-left px-5 py-3.5 font-bold">#</th>
-                        <th class="text-left px-5 py-3.5 font-bold">Product</th>
+                        <th class="text-left px-5 py-3.5 font-bold">Item Name</th>
                         <th class="text-left px-5 py-3.5 font-bold">Category</th>
+                        <th class="text-right px-5 py-3.5 font-bold">New Mfr</th>
+                        <th class="text-right px-5 py-3.5 font-bold">Used Qty</th>
                         <th class="text-right px-5 py-3.5 font-bold">Manufactured Qty</th>
-                        <th class="text-left px-5 py-3.5 font-bold">Seed Used</th>
-                        <th class="text-right px-5 py-3.5 font-bold">Seed Qty</th>
-                        <th class="text-right px-5 py-3.5 font-bold">Selling Price</th>
-                        <th class="text-right px-5 py-3.5 font-bold">Total Value</th>
-                        <th class="text-left px-5 py-3.5 font-bold">Last Manufactured</th>
+                        <th class="text-right px-5 py-3.5 font-bold">Total Seed Used</th>
+                        <th class="text-left px-5 py-3.5 font-bold">Username</th>
+                        <th class="text-left px-5 py-3.5 font-bold">Branch</th>
+                        <th class="text-center px-5 py-3.5 font-bold">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-800/40">
-                    @foreach($rows as $i => $row)
+                    @foreach($rows as $row)
                     <tr class="hover:bg-slate-800/30 transition">
-                        <td class="px-5 py-3 text-slate-500 text-xs">{{ $i + 1 }}</td>
                         <td class="px-5 py-3">
                             <p class="font-semibold text-white">{{ $row['item_name'] }}</p>
-                            <p class="text-[10px] text-slate-500">{{ $row['business_name'] }}</p>
                         </td>
-                        <td class="px-5 py-3 text-xs text-slate-400">{{ $row['category_name'] }}</td>
-                        <td class="px-5 py-3 text-right">
-                            <span class="font-black font-mono text-violet-400 text-base">
-                                {{ number_format($row['mfg_qty'], 2) }}
+                        <td class="px-5 py-3">
+                            <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-slate-700/50 text-slate-300 border border-slate-600/50">
+                                {{ $row['category_name'] }}
                             </span>
-                            <span class="text-slate-600 text-[10px] ml-1">{{ $row['unit'] }}</span>
                         </td>
-                        <td class="px-5 py-3 text-sm text-amber-300 font-semibold">
-                            {{ $row['seed_name'] !== '—' ? $row['seed_name'] : '—' }}
+                        <td class="px-5 py-3 text-right">
+                            <span class="font-mono text-purple-400 font-semibold">
+                                {{ number_format($row['new_mfr_quantity'] ?? 0, 3) }}
+                            </span>
                         </td>
-                        <td class="px-5 py-3 text-right font-mono text-amber-400">
+                        <td class="px-5 py-3 text-right">
+                            <span class="font-mono text-orange-400 font-semibold">
+                                {{ number_format($row['used_seed_qty'] ?? 0, 3) }}
+                            </span>
+                        </td>
+                        <td class="px-5 py-3 text-right">
+                            <span class="font-mono text-blue-400 font-semibold">
+                                {{ number_format($row['mfg_qty'], 3) }}
+                            </span>
+                        </td>
+                        <td class="px-5 py-3 text-right">
                             @if($row['seed_qty_used'] > 0)
-                                {{ number_format($row['seed_qty_used'], 2) }}
-                                <span class="text-slate-600 text-[10px]"> {{ $row['seed_unit'] }}</span>
+                                <div class="flex flex-col items-end">
+                                    <span class="font-mono text-amber-400 font-semibold">
+                                        {{ number_format($row['seed_qty_used'], 3) }}
+                                        <span class="text-slate-500 text-xs font-normal"> {{ $row['seed_unit'] }}</span>
+                                    </span>
+                                    @if($row['seed_name'] && $row['seed_name'] !== '—')
+                                    <span class="text-[10px] text-slate-500 mt-0.5">{{ $row['seed_name'] }}</span>
+                                    @endif
+                                </div>
                             @else
                                 <span class="text-slate-600">—</span>
                             @endif
                         </td>
-                        <td class="px-5 py-3 text-right font-mono text-slate-300">
-                            {{ number_format($row['selling_price'], 2) }}
-                            <span class="text-slate-600 text-[10px]"> ETB</span>
+                        <td class="px-5 py-3">
+                            <span class="text-slate-300 text-sm">{{ $row['manufactured_by_username'] ?? $row['manufactured_by'] ?? '—' }}</span>
                         </td>
-                        <td class="px-5 py-3 text-right font-mono font-bold text-emerald-300">
-                            {{ number_format($row['total_value'], 2) }}
-                            <span class="text-slate-600 text-[10px] font-normal"> ETB</span>
+                        <td class="px-5 py-3">
+                            <span class="text-slate-300 text-sm">{{ $row['manufactured_by_branch'] ?? '—' }}</span>
                         </td>
-                        <td class="px-5 py-3 text-xs text-slate-500">
-                            @if($row['last_mfg_at'])
-                                {{ \Carbon\Carbon::parse($row['last_mfg_at'])->format('d M Y') }}
-                                <span class="text-slate-600 block text-[10px]">
-                                    {{ \Carbon\Carbon::parse($row['last_mfg_at'])->format('H:i') }}
-                                </span>
-                            @else
-                                —
-                            @endif
+                        <td class="px-5 py-3 text-center">
+                            <div class="flex items-center justify-center gap-2">
+                                <button type="button"
+                                    class="p-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 transition-colors"
+                                    title="Edit">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                </button>
+                                {{-- Delete button hidden --}}
+                                {{-- <button type="button"
+                                    class="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+                                    title="Delete">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                </button> --}}
+                            </div>
                         </td>
                     </tr>
                     @endforeach
                 </tbody>
-                <tfoot>
-                    <tr class="border-t-2 border-slate-700 bg-slate-950/70 font-bold text-xs">
-                        <td class="px-5 py-3.5 text-slate-400" colspan="3">Total</td>
-                        <td class="px-5 py-3.5 text-right font-mono text-violet-400">
-                            {{ number_format($totalMfgQty, 2) }}
-                        </td>
-                        <td class="px-5 py-3.5"></td>
-                        <td class="px-5 py-3.5 text-right font-mono text-amber-400">
-                            {{ number_format($totalSeed, 2) }}
-                        </td>
-                        <td class="px-5 py-3.5"></td>
-                        <td class="px-5 py-3.5 text-right font-mono text-emerald-300">
-                            {{ number_format($totalValue, 2) }}
-                            <span class="text-slate-600 font-normal text-[10px]"> ETB</span>
-                        </td>
-                        <td class="px-5 py-3.5"></td>
-                    </tr>
-                </tfoot>
             </table>
         </div>
         @endif

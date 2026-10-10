@@ -62,7 +62,7 @@ class ProductTransfer extends Component
     #[Computed]
     public function transferHistory(): \Illuminate\Support\Collection
     {
-        $query = StockMovement::where('stock_movements.reference_type', 'transfer')
+        $query = StockMovement::where('stock_movements.reference_type', 'StockTransfer')
             ->where('stock_movements.direction', 'in')
             ->join('products',   'stock_movements.item_id',      '=', 'products.id')
             ->join('categories', 'products.category_id',         '=', 'categories.id')
@@ -378,37 +378,11 @@ class ProductTransfer extends Component
             // ── Add to destination branch ─────────────────────────────────
             $destLocation = Location::where('branch_id', $destBranch->id)->first();
 
-            // Upsert Purchase record at destination
-            $existing = Purchase::where('business_id', $destBranch->business_id)
-                ->where('branch_id', $destBranch->id)
-                ->where('product_id', $product->id)
-                ->where('status', Purchase::STATUS_COMPLETED)
-                ->latest('id')
-                ->first();
+            // NOTE: Transfers do NOT create Purchase records
+            // They only create stock_movements (TRANSFER_IN/TRANSFER_OUT)
+            // This prevents double-counting in purchase reports
 
-            if ($existing) {
-                Purchase::where('id', $existing->id)
-                    ->update([
-                        'quantity'      => DB::raw('quantity + ' . $qty),
-                        'purchase_date' => now()->toDateString(),
-                    ]);
-                $purchase = $existing;
-            } else {
-                $purchase = Purchase::create([
-                    'business_id'   => $destBranch->business_id,
-                    'branch_id'     => $destBranch->id,
-                    'product_id'    => $product->id,
-                    'category_id'   => $product->category_id,
-                    'purchase_type' => Purchase::TYPE_PRODUCT,
-                    'purchase_date' => now()->toDateString(),
-                    'quantity'      => $qty,
-                    'unit'          => $product->unit ?? 'unit',
-                    'unit_price'    => (float) ($product->cost_price ?? 0),
-                    'status'        => Purchase::STATUS_COMPLETED,
-                    'notes'         => 'Transfer from manager. ' . trim($this->trNotes),
-                    'created_by'    => auth()->id(),
-                ]);
-            }
+            $purchase = null; // Just track for history
 
             // Record proper TRANSFER_OUT + TRANSFER_IN movements via InventoryService::transfer()
             if ($srcLocation && $destLocation) {
