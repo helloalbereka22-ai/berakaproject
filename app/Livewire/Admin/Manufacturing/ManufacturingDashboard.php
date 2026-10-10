@@ -372,12 +372,17 @@ class ManufacturingDashboard extends Component
                     
                     // If added today, check quantity
                     if ($addedDate === $today) {
-                        // For non-super-admin: check if THIS BRANCH manufactured TODAY
+                        // For non-super-admin: ONLY show products with per-branch daily qty for THIS BRANCH
                         if ($branchIds && !$user->isSuperAdmin()) {
-                            // Check per-branch daily qty (NEW MFR today, not lifetime total)
+                            // Check per-branch daily qty (NEW MFR today ONLY)
                             $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
                             
-                            // Only include if this branch has a daily entry (NEW MFR today)
+                            if (empty($dailyByBranch)) {
+                                // No per-branch daily data - product not manufactured today in per-branch system
+                                return false;
+                            }
+                            
+                            // Only include if THIS BRANCH has a daily entry TODAY
                             foreach ($branchIds as $branchId) {
                                 $branchIdInt = (int)$branchId;
                                 if (isset($dailyByBranch[$branchIdInt]) && (float)$dailyByBranch[$branchIdInt] > 0) {
@@ -385,29 +390,19 @@ class ManufacturingDashboard extends Component
                                 }
                             }
                             
-                            // Fallback: for old products without per-branch daily tracking,
-                            // check if manufacturing happened today by looking at manufacturing_daily_qty
-                            $dailyTotal = (float)($meta['manufacturing_daily_qty'] ?? 0);
-                            if ($dailyTotal > 0) {
-                                // Now verify this branch actually manufactured something today
-                                // by checking if they have any entry in manufacturing_by_branch
-                                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-                                foreach ($branchIds as $branchId) {
-                                    if (isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0) {
-                                        return true;
-                                    }
-                                }
-                            }
-                            
                             return false;
                         }
 
-                        // Super admin: include any product manufactured today
-                        $qty = (float)($meta['manufacturing_daily_qty'] ?? $meta['manufacturing_quantity'] ?? 0);
-                        if ($qty <= 0) {
-                            return false;
+                        // Super admin: include any product with daily manufacturing data
+                        $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
+                        if (!empty($dailyByBranch)) {
+                            // Has per-branch daily data
+                            return true;
                         }
-                        return true;
+                        
+                        // Fallback for old products: check if manufacturing_daily_qty > 0
+                        $qty = (float)($meta['manufacturing_daily_qty'] ?? 0);
+                        return $qty > 0;
                     }
                 } catch (\Exception $e) {
                     return false;
@@ -434,17 +429,6 @@ class ManufacturingDashboard extends Component
                     $branchIdInt = (int)$branchId;
                     if (isset($dailyByBranch[$branchIdInt])) {
                         $qty += (float)$dailyByBranch[$branchIdInt];
-                    }
-                }
-                
-                // Graceful fallback for old products without manufacturing_daily_qty_by_branch:
-                // If we got 0 qty but the product has manufacturing_by_branch data, use that
-                if ($qty == 0 && isset($meta['manufacturing_by_branch'])) {
-                    $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-                    foreach ($branchIds as $branchId) {
-                        if (isset($manufacturingByBranch[$branchId])) {
-                            $qty += (float)$manufacturingByBranch[$branchId];
-                        }
                     }
                 }
             } else {
