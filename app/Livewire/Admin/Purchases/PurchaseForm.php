@@ -537,38 +537,26 @@ class PurchaseForm extends Component
             ->toArray();
     }
 
-    // ── Pre-fill unit & prices when item selected ─────────────────────────
+    // ── Pre-fill prices when item selected (if not already filled) ────────
     public function updatedProductId(): void
     {
-        $this->unit              = '';
-        $this->unit_price        = '';
-        $this->selling_price     = '';
-        $this->quantity          = '';
-        $this->baseUnitPrice     = '';
+        // Clear errors when product changes
         $this->sellingPriceError = '';
 
         if (!$this->product_id) return;
 
         $product = Product::withoutGlobalScopes()->find($this->product_id);
         if ($product) {
-            // Auto-fill quantity to 1
-            if (!$this->shouldHideQuantity()) {
-                $this->quantity = '1';
-            }
-            
-            // Auto-fill unit from product
-            $this->unit = $product->unit ?? '';
-            
-            // Auto-fill unit price from product cost_price
-            $this->unit_price = $product->cost_price > 0 ? (string) (float) $product->cost_price : '';
-            
-            // Store base price for later scaling
-            if ($product->cost_price > 0) {
+            // Only auto-fill purchase price if it's empty
+            if (!$this->unit_price && $product->cost_price > 0) {
+                $this->unit_price = (string) (float) $product->cost_price;
                 $this->baseUnitPrice = (string) (float) $product->cost_price;
             }
             
-            // Auto-fill selling price from product
-            $this->selling_price = $product->selling_price > 0 ? (string) (float) $product->selling_price : '';
+            // Only auto-fill selling price if it's empty
+            if (!$this->selling_price && $product->selling_price > 0) {
+                $this->selling_price = (string) (float) $product->selling_price;
+            }
         }
     }
 

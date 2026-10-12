@@ -145,7 +145,7 @@
                 <label class="block text-[11px] font-semibold text-slate-400 mb-1.5">
                     Quantity <span class="text-red-400">*</span>
                 </label>
-                <input wire:model.live="quantity" type="number" step="0.001" min="0" placeholder="Enter quantity" autocomplete="off"
+                <input wire:model="quantity" type="number" step="0.001" min="0" placeholder="Enter quantity" autocomplete="off"
                     class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-mono text-white focus:border-indigo-500 outline-none transition">
                 @error('quantity') <p class="text-red-400 text-xs mt-1">{{ $message }}</p> @enderror
             </div>
@@ -155,7 +155,7 @@
                 <label class="block text-[11px] font-semibold text-slate-400 mb-1.5">
                     Unit <span class="text-red-400">*</span>
                 </label>
-                <select wire:model.live="unit"
+                <select wire:model="unit"
                     class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:border-indigo-500 outline-none transition">
                     <option value="">— Select Unit —</option>
                     @foreach($unitOptions as $u)
