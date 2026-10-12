@@ -311,25 +311,12 @@ class PurchaseForm extends Component
     // ── Store base unit price for scaling when quantity changes ───────────
     public string $baseUnitPrice = '';
 
-    // ── Update handler: scale price when quantity changes ──────────────────
+    // ── Update handler: when quantity manually changes, keep purchase price as-is ──────────────────
     public function updatedQuantity(): void
     {
-        // When quantity changes, scale the purchase price proportionally
-        if (!$this->baseUnitPrice && $this->unit_price) {
-            // Store the base price on first change if not already stored
-            $this->baseUnitPrice = $this->unit_price;
-        }
-
-        if ($this->baseUnitPrice && $this->quantity) {
-            $qty = (float) $this->quantity;
-            $basePrice = (float) $this->baseUnitPrice;
-            
-            if ($qty > 0 && $basePrice > 0) {
-                // Scale: total_price = base_unit_price * quantity
-                $totalPrice = $basePrice * $qty;
-                $this->unit_price = (string) $totalPrice;
-            }
-        }
+        // Just validate, don't auto-scale the price
+        // User should manually enter the purchase price they want
+        $this->validateSellingPrice();
     }
 
     // ── Helper: is the currently selected business an oil factory? ────────
