@@ -427,6 +427,10 @@ class PurchaseForm extends Component
         
         $this->category_id = '';
         $this->product_id  = '';
+        $this->quantity    = '';
+        $this->unit        = '';
+        $this->unit_price  = '';
+        $this->selling_price = '';
         $this->branches    = [];
         $this->categories  = [];
         $this->products    = [];
@@ -445,6 +449,7 @@ class PurchaseForm extends Component
         // Reset product/category when branch changes
         $this->category_id = '';
         $this->product_id  = '';
+        $this->quantity    = '';
         $this->products    = [];
         $this->unit        = '';
         $this->unit_price  = '';
@@ -467,6 +472,7 @@ class PurchaseForm extends Component
         // When type changes, reset downstream fields
         $this->category_id = '';
         $this->product_id  = '';
+        $this->quantity    = '';
         $this->products    = [];
         $this->unit        = '';
         $this->unit_price  = '';
@@ -517,6 +523,7 @@ class PurchaseForm extends Component
     public function updatedCategoryId(): void
     {
         $this->product_id        = '';
+        $this->quantity          = '';
         $this->products          = [];
         $this->unit              = '';
         $this->unit_price        = '';
