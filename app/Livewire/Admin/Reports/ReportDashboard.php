@@ -625,6 +625,20 @@ class ReportDashboard extends Component
 
         // Get user's assigned branch IDs for per-branch filtering
         $userBranchIds = $user->assignedBranchIds();
+        
+        // For users without explicit branch assignment: resolve from business
+        if (empty($userBranchIds) && !$user->isSuperAdmin()) {
+            $userBusinessIds = $user->assignedBusinessIds();
+            if (!empty($userBusinessIds)) {
+                // Get all branches for assigned businesses
+                $userBranchIds = Branch::whereIn('business_id', $userBusinessIds)
+                    ->pluck('id')
+                    ->toArray();
+            } else {
+                // Fallback: if no business assignment either, show all branches (for GM with broad access)
+                $userBranchIds = Branch::pluck('id')->toArray();
+            }
+        }
 
         // Also include products from Product metadata (manufacturing_quantity stored in metadata)
         $productMetaItems = \App\Models\Product::withoutGlobalScopes()
@@ -639,6 +653,7 @@ class ReportDashboard extends Component
                     $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
                     $hasUserBranchContribution = false;
                     
+                    // Check if any user branch (or all branches if GM) have this product manufactured
                     foreach ($userBranchIds as $branchId) {
                         if (isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0) {
                             $hasUserBranchContribution = true;
@@ -679,68 +694,108 @@ class ReportDashboard extends Component
                 $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
                 $manufacturedByPerBranch = $meta['manufactured_by_per_branch'] ?? [];
                 
-                // For super admin: combine all branches into a single row to avoid duplicates
+                // For super admin: create separate rows for each branch that manufactured this item
                 if ($user->isSuperAdmin() && !empty($manufacturingByBranch)) {
-                    // Calculate total across all branches
-                    $totalMfgQty = 0;
-                    $branchNames = [];
+                    $rows = [];
                     
                     foreach ($manufacturingByBranch as $branchId => $qty) {
                         if (is_numeric($branchId) && (float)$qty > 0) {
-                            $totalMfgQty += (float)$qty;
                             $branch = \App\Models\Branch::find($branchId);
                             if ($branch) {
-                                $branchNames[] = $branch->name;
+                                $username = $manufacturedByPerBranch[$branchId]['username'] ?? '—';
+                                
+                                // Get last_mfr_quantity for this specific branch
+                                // For the original manufacturing branch: use last_mfr_quantity
+                                // For branches that received transferred products: use the daily qty they created
+                                $branchLastMfrQty = 0;
+                                if ($branchId == ($meta['manufactured_by_branch_id'] ?? null)) {
+                                    $branchLastMfrQty = (float) ($meta['last_mfr_quantity'] ?? 0);
+                                } else {
+                                    // For other branches: check if they have daily manufacturing activity (transfers)
+                                    $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
+                                    $branchLastMfrQty = (float)($dailyByBranch[$branchId] ?? $dailyByBranch[(string)$branchId] ?? 0);
+                                }
+                                
+                                // ONLY add row if this branch has NEW Mfr quantity (manufactured or transferred)
+                                if ($branchLastMfrQty > 0) {
+                                    $rows[] = [
+                                        'product_id'               => $product->id,
+                                        'item_name'                => $product->name,
+                                        'category_name'            => $product->category?->name ?? '—',
+                                        'business_name'            => $product->business?->name ?? '—',
+                                        'manufactured_by'          => $branch->name,
+                                        'manufactured_by_username' => $username,
+                                        'manufactured_by_branch'   => $branch->name,
+                                        'new_mfr_quantity'         => $branchLastMfrQty,
+                                        'mfg_qty'                  => (float) $qty,
+                                        'used_seed_qty'            => (float) ($meta['current_seed_deduction'] ?? 0),
+                                        'unit'                     => $product->unit ?? 'pcs',
+                                        'selling_price'            => (float) $product->selling_price,
+                                        'total_value'              => round((float)$qty * (float) $product->selling_price, 2),
+                                        'seed_name'                => $meta['seed_name'] ?? '—',
+                                        'seed_qty_used'            => (float) ($meta['seed_quantity_used'] ?? 0),
+                                        'seed_unit'                => $meta['seed_unit'] ?? 'kg',
+                                        'last_mfg_at'              => isset($meta['manufacturing_added_at']) 
+                                            ? \Carbon\Carbon::parse($meta['manufacturing_added_at'])->format('Y-m-d H:i:s')
+                                            : '—',
+                                    ];
+                                }
                             }
                         }
                     }
                     
-                    // Show only if there's actual manufacturing
-                    if ($totalMfgQty > 0) {
-                        $combinedBranchName = !empty($branchNames) ? implode(', ', array_unique($branchNames)) : '—';
+                    return $rows;
+                }
+                
+                // For non-admin: show one row per product (like Super Admin) but filtered to their branches
+                // If any of their branches manufactured this product, show ONE row with the latest entry
+                $mfgQty = 0;
+                $branchName = '—';
+                $manufacturerUsername = '—';
+                $mfgBranchId = isset($meta['manufactured_by_branch_id']) ? (int)$meta['manufactured_by_branch_id'] : null;
+                
+                // Sum quantities across all user's branches
+                foreach ($userBranchIds as $userBranchId) {
+                    if (isset($manufacturingByBranch[$userBranchId]) && (float)$manufacturingByBranch[$userBranchId] > 0) {
+                        $mfgQty += (float) $manufacturingByBranch[$userBranchId];
                         
-                        return [[
-                            'product_id'               => $product->id,
-                            'item_name'                => $product->name,
-                            'category_name'            => $product->category?->name ?? '—',
-                            'business_name'            => $product->business?->name ?? '—',
-                            'manufactured_by'          => $combinedBranchName,
-                            'manufactured_by_username' => $meta['manufactured_by_username'] ?? '—',
-                            'manufactured_by_branch'   => $combinedBranchName,
-                            'new_mfr_quantity'         => (float) ($meta['new_mfr_quantity'] ?? 0),
-                            'mfg_qty'                  => $totalMfgQty,
-                            'used_seed_qty'            => (float) ($meta['current_seed_deduction'] ?? 0),
-                            'unit'                     => $product->unit ?? 'pcs',
-                            'selling_price'            => (float) $product->selling_price,
-                            'total_value'              => round($totalMfgQty * (float) $product->selling_price, 2),
-                            'seed_name'                => $meta['seed_name'] ?? '—',
-                            'seed_qty_used'            => (float) ($meta['seed_quantity_used'] ?? 0),
-                            'seed_unit'                => $meta['seed_unit'] ?? 'kg',
-                            'last_mfg_at'              => isset($meta['manufacturing_added_at']) 
-                                ? \Carbon\Carbon::parse($meta['manufacturing_added_at'])->format('Y-m-d H:i:s')
-                                : '—',
-                        ]];
+                        // Use the branch that made the LATEST entry (manufactured_by_branch_id)
+                        // not just the last one in the loop
+                        if ($userBranchId == $mfgBranchId) {
+                            $branch = \App\Models\Branch::find($userBranchId);
+                            $branchName = $branch?->name ?? '—';
+                            
+                            // Get username for the branch that made the latest entry
+                            if (isset($manufacturedByPerBranch[$userBranchId])) {
+                                $manufacturerUsername = $manufacturedByPerBranch[$userBranchId]['username'] ?? '—';
+                            }
+                        }
                     }
-                    
+                }
+                
+                // If no branch found yet (manufactured_by_branch_id not in user's branches), use first one
+                if ($branchName === '—' && $mfgQty > 0) {
+                    foreach ($userBranchIds as $userBranchId) {
+                        if (isset($manufacturingByBranch[$userBranchId]) && (float)$manufacturingByBranch[$userBranchId] > 0) {
+                            $branch = \App\Models\Branch::find($userBranchId);
+                            $branchName = $branch?->name ?? '—';
+                            if (isset($manufacturedByPerBranch[$userBranchId])) {
+                                $manufacturerUsername = $manufacturedByPerBranch[$userBranchId]['username'] ?? '—';
+                            }
+                            break;
+                        }
+                    }
+                }
+                
+                // Only return if any branch has manufacturing data for this product
+                if ($mfgQty <= 0) {
                     return [];
                 }
                 
-                // For non-admin: show single row with their branch quantity
-                $mfgQty = 0;
-                $userBranchId = $userBranchIds[0] ?? null;
-                if ($userBranchId && isset($manufacturingByBranch[$userBranchId])) {
-                    $mfgQty = (float) $manufacturingByBranch[$userBranchId];
-                }
-                
-                $branch = $userBranchId ? \App\Models\Branch::find($userBranchId) : null;
-                $branchName = $branch?->name ?? '—';
-                
-                // Get the username for this specific branch
-                $manufacturerUsername = '—';
-                if (isset($manufacturedByPerBranch[$userBranchId])) {
-                    $manufacturerUsername = $manufacturedByPerBranch[$userBranchId]['username'] ?? '—';
-                } else {
-                    $manufacturerUsername = $meta['manufactured_by_username'] ?? '—';
+                // Filter out rows where there's no NEW manufacturing today (New Mfr = 0)
+                $newMfrQty = (float) ($meta['last_mfr_quantity'] ?? 0);
+                if ($newMfrQty <= 0) {
+                    return [];
                 }
                 
                 return [[
@@ -751,7 +806,7 @@ class ReportDashboard extends Component
                     'manufactured_by'          => $branchName,
                     'manufactured_by_username' => $manufacturerUsername,
                     'manufactured_by_branch'   => $branchName,
-                    'new_mfr_quantity'         => (float) ($meta['new_mfr_quantity'] ?? 0),
+                    'new_mfr_quantity'         => (float) ($meta['last_mfr_quantity'] ?? 0),
                     'mfg_qty'                  => $mfgQty,
                     'used_seed_qty'            => (float) ($meta['current_seed_deduction'] ?? 0),
                     'unit'                     => $product->unit ?? 'pcs',
