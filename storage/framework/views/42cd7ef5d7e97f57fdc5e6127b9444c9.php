@@ -182,8 +182,15 @@ unset($__errorArgs, $__bag); ?>
                 <label class="block text-[11px] font-semibold text-slate-400 mb-1.5">
                     Quantity <span class="text-red-400">*</span>
                 </label>
-                <input wire:model="quantity" type="number" step="0.001" min="0" placeholder="Enter quantity" autocomplete="off"
+                <input 
+                    wire:model.blur="quantity" 
+                    type="number" 
+                    step="0.001" 
+                    min="0" 
+                    placeholder="Enter quantity" 
+                    autocomplete="off"
                     class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-mono text-white focus:border-indigo-500 outline-none transition">
+                
                 <?php $__errorArgs = ['quantity'];
 $__bag = $errors->getBag($__errorArgs[1] ?? 'default');
 if ($__bag->has($__errorArgs[0])) :
