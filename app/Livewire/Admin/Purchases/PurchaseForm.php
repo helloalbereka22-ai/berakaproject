@@ -314,9 +314,7 @@ class PurchaseForm extends Component
     // ── Update handler: when quantity manually changes, keep purchase price as-is ──────────────────
     public function updatedQuantity(): void
     {
-        // Just validate, don't auto-scale the price
-        // User should manually enter the purchase price they want
-        $this->validateSellingPrice();
+        // Do nothing - quantity is completely manual, don't validate or scale prices
     }
 
     // ── Helper: is the currently selected business an oil factory? ────────
@@ -542,6 +540,9 @@ class PurchaseForm extends Component
     {
         // Clear errors when product changes
         $this->sellingPriceError = '';
+        
+        // Clear quantity - user must enter it manually
+        $this->quantity = '';
 
         if (!$this->product_id) return;
 

@@ -171,7 +171,7 @@
                 <label class="block text-[11px] font-semibold text-slate-400 mb-1.5">
                     Purchase Price (ETB) <span class="text-red-400">*</span>
                 </label>
-                <input wire:model.live="unit_price" type="number" step="0.01" min="0" placeholder="0.00" autocomplete="off"
+                <input wire:model="unit_price" type="number" step="0.01" min="0" placeholder="0.00" autocomplete="off"
                     class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-mono text-white focus:border-indigo-500 outline-none transition">
                 @error('unit_price') <p class="text-red-400 text-xs mt-1">{{ $message }}</p> @enderror
             </div>
@@ -189,7 +189,7 @@
                         <span class="text-slate-600 font-normal">≥ {{ number_format((float)$unit_price, 2) }}</span>
                     @endif
                 </label>
-                <input wire:model.live="selling_price" type="number" step="0.01" min="0" autocomplete="off"
+                <input wire:model="selling_price" type="number" step="0.01" min="0" autocomplete="off"
                     placeholder="{{ ($type === 'purchase' && !$this->isBookstoreBusiness()) ? 'Optional' : '0.00' }}"
                     class="w-full bg-slate-950 border {{ $sellingPriceError ? 'border-red-500' : 'border-slate-700' }} rounded-xl px-4 py-2.5 text-sm font-mono text-white focus:border-indigo-500 outline-none transition">
                 @if($sellingPriceError)
@@ -503,7 +503,7 @@
                         </div>
                         <div>
                             <label class="block text-xs font-semibold text-slate-300 mb-1.5">Purchase Price (ETB) <span class="text-red-400">*</span></label>
-                            <input wire:model.live="editUnitPrice" type="number" step="0.01" min="0" autocomplete="off"
+                            <input wire:model="editUnitPrice" type="number" step="0.01" min="0" autocomplete="off"
                                 class="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm font-mono text-white focus:border-indigo-500 outline-none transition">
                             @error('editUnitPrice') <p class="text-red-400 text-xs mt-1">{{ $message }}</p> @enderror
                         </div>
@@ -523,7 +523,7 @@
                                     <span class="text-slate-600 font-normal">≥ {{ number_format((float)$editUnitPrice, 2) }}</span>
                                 @endif
                             </label>
-                            <input wire:model.live="editSellingPrice" type="number" step="0.01" min="0" autocomplete="off"
+                            <input wire:model="editSellingPrice" type="number" step="0.01" min="0" autocomplete="off"
                                 placeholder="{{ ($editIsOil && !$editIsBookstore) ? 'Optional' : '0.00' }}"
                                 class="w-full bg-slate-950 border {{ $editSellingPriceError ? 'border-red-500' : 'border-slate-700/80' }} rounded-xl px-4 py-2.5 text-sm font-mono text-white focus:border-indigo-500 outline-none transition">
                             @if($editSellingPriceError)
