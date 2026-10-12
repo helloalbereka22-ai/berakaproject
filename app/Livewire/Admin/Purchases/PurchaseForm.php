@@ -311,20 +311,12 @@ class PurchaseForm extends Component
     // ── Store base unit price for scaling when quantity changes ───────────
     public string $baseUnitPrice = '';
 
-    // ── Update handlers for dynamic calculation ──────────────────────────
-    public function updatedUnit(): void
-    {
-        // When unit is selected, auto-fill quantity to 1
-        if (!$this->shouldHideQuantity() && $this->unit && !$this->quantity) {
-            $this->quantity = '1';
-        }
-    }
-
+    // ── Update handler: scale price when quantity changes ──────────────────
     public function updatedQuantity(): void
     {
         // When quantity changes, scale the purchase price proportionally
         if (!$this->baseUnitPrice && $this->unit_price) {
-            // Store the base price on first change
+            // Store the base price on first change if not already stored
             $this->baseUnitPrice = $this->unit_price;
         }
 
@@ -561,17 +553,34 @@ class PurchaseForm extends Component
     // ── Pre-fill unit & prices when item selected ─────────────────────────
     public function updatedProductId(): void
     {
-        $this->unit          = '';
-        $this->unit_price    = '';
-        $this->selling_price = '';
+        $this->unit              = '';
+        $this->unit_price        = '';
+        $this->selling_price     = '';
+        $this->quantity          = '';
+        $this->baseUnitPrice     = '';
         $this->sellingPriceError = '';
 
         if (!$this->product_id) return;
 
         $product = Product::withoutGlobalScopes()->find($this->product_id);
         if ($product) {
-            $this->unit          = $product->unit ?? '';
-            $this->unit_price    = $product->cost_price > 0    ? (string) (float) $product->cost_price    : '';
+            // Auto-fill quantity to 1
+            if (!$this->shouldHideQuantity()) {
+                $this->quantity = '1';
+            }
+            
+            // Auto-fill unit from product
+            $this->unit = $product->unit ?? '';
+            
+            // Auto-fill unit price from product cost_price
+            $this->unit_price = $product->cost_price > 0 ? (string) (float) $product->cost_price : '';
+            
+            // Store base price for later scaling
+            if ($product->cost_price > 0) {
+                $this->baseUnitPrice = (string) (float) $product->cost_price;
+            }
+            
+            // Auto-fill selling price from product
             $this->selling_price = $product->selling_price > 0 ? (string) (float) $product->selling_price : '';
         }
     }
