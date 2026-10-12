@@ -146,6 +146,7 @@ class User extends Authenticatable
 
     /**
      * Get the branch IDs the user is assigned to.
+     * For branch-level access only (Sellers, Staff, specific branch manufacturers).
      */
     public function assignedBranchIds(): array
     {

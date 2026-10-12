@@ -72,12 +72,14 @@ class UsersSeeder extends Seeder
             password: 'Manager@1234',
         );
         if ($oilBusiness) {
-            $this->attachRole($manager, $roles['Business Manager'], $oilBusiness->id);
+            // Assign to Oil Factory business AND to the main factory branch
+            $this->attachRole($manager, $roles['Business Manager'], $oilBusiness->id, $factoryBranch?->id);
         }
         if ($bookBusiness) {
-            $this->attachRole($manager, $roles['Business Manager'], $bookBusiness->id);
+            // Assign to Bookstore business AND to bookstore branch 1
+            $this->attachRole($manager, $roles['Business Manager'], $bookBusiness->id, $bookBranch1?->id);
         }
-        $this->log($manager->email, 'Business Manager', 'Oil Factory + Bookstore');
+        $this->log($manager->email, 'Business Manager', 'Oil Factory (Main Branch) + Bookstore (Branch 1)');
 
         // ── 3. Oil Factory Business Manager ──────────────────────────────
         if ($oilBusiness) {

@@ -37,7 +37,31 @@ class GuestCart extends Component
 
         $this->validate([
             'customerName'  => 'required|min:2',
-            'customerPhone' => 'required|min:7',
+            'customerPhone' => [
+                'required',
+                function ($attribute, $value, $fail) {
+                    // Remove all non-numeric characters
+                    $phone = preg_replace('/[^0-9]/', '', $value);
+                    
+                    // Check length
+                    if (strlen($phone) > 10) {
+                        $fail('Phone number greater than 10 is not allowed.');
+                        return;
+                    }
+                    
+                    // Check if exactly 10 digits
+                    if (strlen($phone) !== 10) {
+                        $fail('Phone number must be exactly 10 digits.');
+                        return;
+                    }
+                    
+                    // Check if starts with 09 or 07
+                    if (!preg_match('/^(09|07)/', $phone)) {
+                        $fail('Phone number must start with 09 or 07.');
+                        return;
+                    }
+                }
+            ],
             'address'       => 'required|min:5',
         ]);
 

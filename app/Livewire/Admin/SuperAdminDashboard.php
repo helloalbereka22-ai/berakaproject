@@ -1653,18 +1653,18 @@ class SuperAdminDashboard extends Component
     // ══════════════════════════════════════════════════════════════════════
 
     // ── Daily Manufactured Items ───────────────────────────────────────────
+    // NOT using #[Computed] so it always fetches fresh data on each request
     public function getDailyManufactured()
     {
         $user = auth()->user();
-        $businessIds = $user->isSuperAdmin() ? \App\Models\Business::pluck('id')->toArray() : $user->assignedBusinessIds();
-
-        // Get products with manufacturing activity added today
         $today = now()->toDateString();
 
+        // Get all branches for branch-specific summation
+        $allBranches = \App\Models\Business::pluck('id')->toArray();
+
+        // Get products with manufacturing activity added today
         $items = \App\Models\Product::query()
             ->with(['category', 'business'])
-            ->whereIn('business_id', $businessIds)
-            ->whereIn('type', ['finished_product', 'bottle_product'])
             ->where('status', 'active')
             ->whereNotNull('metadata')
             ->get()
@@ -1680,10 +1680,9 @@ class SuperAdminDashboard extends Component
                     // Parse ISO8601 string or timestamp
                     $addedDate = \Carbon\Carbon::parse($meta['manufacturing_added_at'])->toDateString();
                     
-                    // If added today, include it
+                    // If added today, check if there's a new_mfr_quantity
                     if ($addedDate === $today) {
-                        // Use manufacturing_daily_qty if available, otherwise use manufacturing_quantity
-                        $qty = (float)($meta['manufacturing_daily_qty'] ?? $meta['manufacturing_quantity'] ?? 0);
+                        $qty = (float)($meta['new_mfr_quantity'] ?? 0);
                         return $qty > 0;
                     }
                 } catch (\Exception $e) {
@@ -1701,8 +1700,8 @@ class SuperAdminDashboard extends Component
         return $items->map(function ($product) {
             $meta = $product->metadata ?? [];
             
-            // Use manufacturing_daily_qty if available, otherwise use manufacturing_quantity
-            $qty = (float)($meta['manufacturing_daily_qty'] ?? $meta['manufacturing_quantity'] ?? 0);
+            // Daily Manufactured for Super Admin = use last_mfr_quantity (actual daily entry, not accumulated)
+            $qty = (float)($meta['last_mfr_quantity'] ?? 0);
             
             return [
                 'product_id'       => $product->id,

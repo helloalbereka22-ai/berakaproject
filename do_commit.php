@@ -1,26 +1,22 @@
 <?php
-$cwd = __DIR__;
-chdir($cwd);
+
+chdir('c:\\xammpp82\\htdocs\\albarekaaaaaa');
 
 echo "Current directory: " . getcwd() . "\n";
+echo "Attempting to commit changes...\n\n";
 
-// Stage the file
-$output = [];
-$return = 0;
-exec('git add app/Livewire/Admin/Manufacturing/ManufacturingUserDashboard.php 2>&1', $output, $return);
-echo "Git add output: " . implode("\n", $output) . "\n";
-echo "Return code: $return\n";
+// Stage files
+exec('git add app/Livewire/Admin/Manufacturing/ManufacturingDashboard.php 2>&1', $output1);
+exec('git add app/Livewire/Admin/Reports/ReportDashboard.php 2>&1', $output2);
+
+echo "Files staged.\n";
 
 // Commit
-$output = [];
-$return = 0;
-$message = "fix: Handle legacy manufactured products in user dashboard filtering";
-exec("git commit -m \"$message\" 2>&1", $output, $return);
-echo "Git commit output: " . implode("\n", $output) . "\n";
-echo "Return code: $return\n";
+exec('git commit -m "Fix dashboard Daily Manufactured to show only today\'s production and fix report duplicates" 2>&1', $output3);
 
-if ($return === 0) {
-    echo "\n✅ Commit successful!\n";
-} else {
-    echo "\n⚠️ Commit may have failed or nothing to commit.\n";
+echo "\nCommit output:\n";
+foreach ($output3 as $line) {
+    echo $line . "\n";
 }
+
+echo "\nDone!\n";

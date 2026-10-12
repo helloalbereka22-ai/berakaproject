@@ -33,118 +33,89 @@
                 <h3 class="text-base font-bold text-white">Add Item to Sale</h3>
             </div>
 
-            <div class="p-6 space-y-5">
+            <div class="p-6 space-y-4">
 
                 
-                <div>
-                    <label class="block text-sm font-semibold text-slate-400 mb-2">Type *</label>
-                    <select wire:change="setSellType($event.target.value)"
-                        class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors">
-                        <option value="product"  <?php echo e($sellType === 'product'  ? 'selected' : ''); ?>>Product</option>
-                        <option value="purchase" <?php echo e($sellType === 'purchase' ? 'selected' : ''); ?>>Purchase</option>
-                    </select>
-                    <?php if($sellType === 'purchase'): ?>
-                    <p class="text-[11px] text-amber-400/70 mt-1.5">Bookstore products transferred by general manager</p>
+                <div class="relative z-50">
+                    <label class="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">Search Item Name *</label>
+                    <input type="text" wire:model.live="sellItemSearch" placeholder="Type product name..."
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors">
+                    
+                    
+                    <?php if(!empty($sellItemSearch) && count($this->filteredSellProducts) > 0): ?>
+                    <div class="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                        <?php $__currentLoopData = $this->filteredSellProducts; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $product): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                            <button type="button" 
+                                wire:click="$set('sellProductId', <?php echo e($product->id); ?>); $set('sellItemSearch', '')"
+                                class="w-full text-left px-3 py-2 text-white text-sm hover:bg-emerald-600/20 transition-colors border-b border-slate-700/50 last:border-b-0">
+                                <div class="font-medium"><?php echo e($product->name); ?></div>
+                                <div class="text-xs text-emerald-400">Available: <?php echo e(number_format($product->available_qty, 3)); ?></div>
+                            </button>
+                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                    </div>
                     <?php endif; ?>
                 </div>
 
                 
-                <div>
-                    <label class="block text-sm font-semibold text-slate-400 mb-2">Category *</label>
-                    <select wire:model.live="sellCategoryId"
-                        class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors">
-                        <option value="">— Select Category —</option>
-                        <?php $__currentLoopData = $this->sellCategories; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $category): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                            <option value="<?php echo e($category->id); ?>"><?php echo e($category->name); ?></option>
-                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
-                    </select>
-                    <?php $__errorArgs = ['sellCategoryId'];
-$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
-if ($__bag->has($__errorArgs[0])) :
-if (isset($message)) { $__messageOriginal = $message; }
-$message = $__bag->first($__errorArgs[0]); ?> <p class="text-red-400 text-xs mt-1"><?php echo e($message); ?></p> <?php unset($message);
-if (isset($__messageOriginal)) { $message = $__messageOriginal; }
-endif;
-unset($__errorArgs, $__bag); ?>
-                </div>
-
-                
-                <?php if($sellCategoryId): ?>
-                <div>
-                    <label class="block text-sm font-semibold text-slate-400 mb-2">Product *</label>
-                    <select wire:model.live="sellProductId"
-                        class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors">
-                        <option value="">— Select Product —</option>
-                        <?php $__currentLoopData = $this->sellProducts; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $product): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                            <option value="<?php echo e($product->id); ?>">
-                                <?php echo e($product->name); ?> (<?php echo e(number_format($product->available_qty, 3)); ?> available)
-                            </option>
-                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
-                    </select>
-                    <?php $__errorArgs = ['sellProductId'];
-$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
-if ($__bag->has($__errorArgs[0])) :
-if (isset($message)) { $__messageOriginal = $message; }
-$message = $__bag->first($__errorArgs[0]); ?> <p class="text-red-400 text-xs mt-1"><?php echo e($message); ?></p> <?php unset($message);
-if (isset($__messageOriginal)) { $message = $__messageOriginal; }
-endif;
-unset($__errorArgs, $__bag); ?>
-                </div>
-                <?php endif; ?>
-
-                
-                <?php if($sellProductId): ?>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-4 gap-4">
+                    
                     <div>
-                        <label class="block text-sm font-semibold text-slate-400 mb-2">Available Qty</label>
-                        <div class="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3 text-emerald-400 font-mono text-sm">
-                            <?php echo e(number_format($this->getSellAvailableQuantity(), 3)); ?> units
-                        </div>
-                        <?php
-                            $selectedProduct = \App\Models\Product::find($this->sellProductId);
-                        ?>
-                        <?php if($selectedProduct): ?>
-                        <div class="mt-2 text-xs text-slate-400">
-                            <span class="font-semibold">Manufactured By:</span>
-                            <span class="text-slate-300"><?php echo e($this->getManufacturedByInfo($selectedProduct)); ?></span>
-                        </div>
-                        <?php endif; ?>
+                        <label class="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">Item *</label>
+                        <select wire:model.live="sellProductId"
+                            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors">
+                            <option value="">— Select Item —</option>
+                            <?php $__currentLoopData = $this->allSellProducts; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $product): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                                <option value="<?php echo e($product->id); ?>" <?php echo e($sellProductId == $product->id ? 'selected' : ''); ?>>
+                                    <?php echo e($product->name); ?> (<?php echo e(number_format($product->available_qty, 3)); ?>)
+                                </option>
+                            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                        </select>
                     </div>
+
+                    
                     <div>
-                        <label class="block text-sm font-semibold text-slate-400 mb-2">Sell Quantity *</label>
+                        <label class="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">Available</label>
+                        <div class="w-full bg-slate-700/40 border border-slate-600/50 rounded-lg px-3 py-2.5 text-emerald-400 font-mono text-sm min-h-10 flex items-center">
+                            <?php if($sellProductId && ($selectedProduct = \App\Models\Product::find($sellProductId))): ?>
+                                <?php echo e(number_format($this->calculateBranchAvailableQty($selectedProduct, auth()->user()->assignedBranchIds()), 3)); ?>
+
+                            <?php else: ?>
+                                <span class="text-slate-500">—</span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">Sell Qty *</label>
                         <input type="number" step="0.001" min="0.001" wire:model="sellQuantity"
-                            class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white font-mono text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white font-mono text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
                             placeholder="0.000">
-                        <?php $__errorArgs = ['sellQuantity'];
-$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
-if ($__bag->has($__errorArgs[0])) :
-if (isset($message)) { $__messageOriginal = $message; }
-$message = $__bag->first($__errorArgs[0]); ?> <p class="text-red-400 text-xs mt-1"><?php echo e($message); ?></p> <?php unset($message);
-if (isset($__messageOriginal)) { $message = $__messageOriginal; }
-endif;
-unset($__errorArgs, $__bag); ?>
+                    </div>
+
+                    
+                    <div class="flex flex-col justify-end">
+                        <label class="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">&nbsp;</label>
+                        <button type="button" wire:click="addSellItem" wire:loading.attr="disabled"
+                            class="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors disabled:opacity-50">
+                            <span wire:loading wire:target="addSellItem">Adding...</span>
+                            <span wire:loading.remove wire:target="addSellItem">Add</span>
+                        </button>
                     </div>
                 </div>
-
-                <button type="button" wire:click="addSellItem" wire:loading.attr="disabled"
-                    class="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold text-sm transition-colors disabled:opacity-50">
-                    <span wire:loading wire:target="addSellItem">Adding...</span>
-                    <span wire:loading.remove wire:target="addSellItem">+ Add Item</span>
-                </button>
-                <?php endif; ?>
             </div>
         </div>
 
         
         <div class="bg-slate-900/80 border border-slate-700/50 rounded-2xl overflow-hidden backdrop-blur-sm">
-            <div class="px-6 py-4 bg-gradient-to-r from-blue-900/30 to-slate-900 border-b border-slate-700/50 flex items-center justify-between">
-                <h4 class="text-base font-bold text-white">Sales List</h4>
-                <?php if(!empty($salesItems)): ?>
-                <span class="text-xs text-slate-400"><?php echo e(count($salesItems)); ?> item(s)</span>
-                <?php endif; ?>
-            </div>
+            
+            
+            
 
             <?php if(!empty($salesItems)): ?>
+            <div class="px-6 py-4 border-b border-slate-700/50">
+                <h5 class="text-sm font-semibold text-slate-300 mb-2">Sales Cart</h5>
+            </div>
             <div class="p-6 space-y-4">
                 
                 <table class="w-full text-sm">
@@ -644,7 +615,7 @@ unset($__errorArgs, $__bag); ?>
                 <?php
                     $totalQty = $this->manufacturediItems->sum(function($item) {
                         $meta = $item->metadata ?? [];
-                        return isset($meta['manufacturing_quantity']) ? (float) $meta['manufacturing_quantity'] : 0;
+                        return isset($meta['last_mfr_quantity']) ? (float) $meta['last_mfr_quantity'] : 0;
                     });
                 ?>
                 <div class="px-4 py-2 bg-slate-800/50 rounded-lg">
@@ -677,6 +648,14 @@ unset($__errorArgs, $__bag); ?>
                                 ? \Carbon\Carbon::parse($meta['manufacturing_added_at'])->format('Y-m-d H:i')
                                 : '-';
                             
+                            // Get the New Mfr quantity to check if we should display this row
+                            $lastMfrQty = isset($meta['last_mfr_quantity']) ? (float)$meta['last_mfr_quantity'] : 0;
+                        ?>
+                        
+                        
+                        <?php if($lastMfrQty > 0): ?>
+                        
+                        <?php
                             // Get seed quantity for the MOST RECENT batch of this product
                             // Query FinishedGood → ProductionBatch → BatchMaterialConsumption
                             $seedQty        = null;
@@ -719,9 +698,11 @@ unset($__errorArgs, $__bag); ?>
                             </td>
                             <td class="px-6 py-4 text-right">
                                 <?php
-                                    $newMfrQty = isset($meta['new_mfr_quantity']) ? (float)$meta['new_mfr_quantity'] : 0;
+                                    // New Mfr should show ONLY the LAST entered quantity in "Product Qty *" form
+                                    // NOT accumulated - just the most recent entry amount
+                                    $lastMfrQtyDisplay = isset($meta['last_mfr_quantity']) ? (float)$meta['last_mfr_quantity'] : 0;
                                 ?>
-                                <span class="font-mono text-purple-400 font-semibold"><?php echo e(rtrim(rtrim(number_format($newMfrQty, 3, '.', ''), '0'), '.')); ?></span>
+                                <span class="font-mono text-purple-400 font-semibold"><?php echo e(rtrim(rtrim(number_format($lastMfrQtyDisplay, 3, '.', ''), '0'), '.')); ?></span>
                             </td>
                             <td class="px-6 py-4 text-right">
                                 <span class="font-mono text-blue-400 font-semibold"><?php echo e($this->getManufacturedQtyForUser($item)); ?></span>
@@ -800,6 +781,7 @@ unset($__errorArgs, $__bag); ?>
                                 </div>
                             </td>
                         </tr>
+                        <?php endif; ?>
                         <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); if ($__empty_1): ?>
                         <tr>
                             <td colspan="9" class="px-6 py-16 text-center">

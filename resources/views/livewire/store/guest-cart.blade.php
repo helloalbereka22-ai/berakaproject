@@ -134,8 +134,20 @@
                     <div>
                         <label class="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">Phone Number *</label>
                         <input wire:model.live="customerPhone" type="tel" placeholder="e.g. 0912345678"
-                            class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm font-medium focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none transition">
-                        @error('customerPhone') <p class="text-red-500 text-xs mt-1">{{ $message }}</p> @enderror
+                            inputmode="numeric" maxlength="10"
+                            class="w-full border-2 @error('customerPhone') border-red-500 @else border-gray-200 @enderror rounded-xl px-4 py-3 text-sm font-medium focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none transition"
+                            oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 10);">
+                        @error('customerPhone')
+                            <p class="text-red-500 text-xs mt-1">
+                                @if(strpos($message, 'greater than 10') !== false)
+                                    Greater than 10 digits is not allowed
+                                @elseif(strpos($message, 'regex') !== false)
+                                    Phone must start with 09 or 07 and be exactly 10 digits
+                                @else
+                                    {{ $message }}
+                                @endif
+                            </p>
+                        @enderror
                     </div>
 
                     <div>

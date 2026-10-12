@@ -328,37 +328,30 @@ class ManufacturingDashboard extends Component
     public function getDailyManufactured()
     {
         $user = auth()->user();
+        $today = now()->toDateString();
         
-        // Determine which businesses and branches to query
+        // Get user's assigned branch(es)
+        $userBranchIds = $user->assignedBranchIds();
+        
+        // Determine which branches to query
         if ($user->isSuperAdmin()) {
-            $businessIds = \App\Models\Business::pluck('id')->toArray();
-            $branchIds = null; // Show all branches
+            // Super Admin: show each branch's Daily Manufactured separately
+            // We'll calculate totals per branch
+            $allBranches = \App\Models\Branch::pluck('id')->toArray();
+            $branchesToShow = $allBranches;
         } else {
-            // Non-super-admin: only their assigned branches
-            $businessIds = $user->assignedBusinessIds();
-            $branchIds = $user->assignedBranchIds();
-        }
-        
-        // If there's a selected business, use that
-        if ($this->selectedBusinessId) {
-            $businessIds = [$this->selectedBusinessId];
-            // For selected business, still show all branches unless user is restricted
-            if (!$user->isSuperAdmin()) {
-                $branchIds = $user->assignedBranchIds();
-            }
+            // Regular user: only their assigned branches
+            $branchesToShow = $userBranchIds;
         }
 
         // Get products with manufacturing activity added today
-        $today = now()->toDateString();
-
         $query = \App\Models\Product::query()
             ->with(['category', 'business'])
-            ->whereIn('business_id', $businessIds)
             ->where('status', 'active')
             ->whereNotNull('metadata');
 
         $items = $query->get()
-            ->filter(function ($product) use ($today, $branchIds, $user) {
+            ->filter(function ($product) use ($today, $branchesToShow, $user) {
                 $meta = $product->metadata ?? [];
                 
                 // Check if product has manufacturing_added_at timestamp
@@ -375,20 +368,24 @@ class ManufacturingDashboard extends Component
                         return false;
                     }
                     
-                    // For non-super-admin: check if THIS BRANCH has manufacturing data
-                    if ($branchIds && !$user->isSuperAdmin()) {
-                        // Check if this branch manufactured something (use manufacturing_by_branch as source of truth)
-                        $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-                        
-                        foreach ($branchIds as $branchId) {
-                            if (isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0) {
+                    // Use manufactured_by_branch_id for strict ownership (matches products page filter)
+                    $manufacturingByBranchId = (int) ($meta['manufactured_by_branch_id'] ?? 0);
+                    
+                    if (!$manufacturingByBranchId) {
+                        return false; // Skip if no branch owner set
+                    }
+                    
+                    // For users with branch assignments, check only their branches
+                    if (!$user->isSuperAdmin() && !empty($branchesToShow)) {
+                        foreach ($branchesToShow as $branchId) {
+                            if ((int)$branchId === $manufacturingByBranchId) {
                                 return true;
                             }
                         }
                         return false;
                     }
-
-                    // Super admin: include any product manufactured today
+                    
+                    // For super admin, include all
                     return true;
                 } catch (\Exception $e) {
                     return false;
@@ -400,11 +397,12 @@ class ManufacturingDashboard extends Component
             })
             ->values();
 
-        return $items->map(function ($product) use ($branchIds, $user) {
+        return $items->map(function ($product) use ($branchesToShow, $user) {
             $meta = $product->metadata ?? [];
             
-            // Extract today's manufactured quantity from 'new_mfr_quantity' (what was actually produced today)
-            $qty = (float)($meta['new_mfr_quantity'] ?? 0);
+            // Use last_mfr_quantity (the ACTUAL daily entry value shown in "New Mfr" column)
+            // This is the sum of today's manufacturing entries
+            $qty = (float)($meta['last_mfr_quantity'] ?? 0);
             
             return [
                 'product_id'       => $product->id,

@@ -1,0 +1,9 @@
+COMMIT 1: Align Daily Manufactured KPI filter with products page
+- File: app/Livewire/Admin/Manufacturing/ManufacturingDashboard.php
+- Change: Use manufactured_by_branch_id instead of manufacturing_daily_qty_by_branch
+- Impact: Fixes bilal dashboard showing 50 instead of 35
+
+COMMIT 2: Fix Super Admin Daily Manufactured to use last_mfr_quantity
+- File: app/Livewire/Admin/SuperAdminDashboard.php  
+- Change: Use last_mfr_quantity instead of summing manufacturing_daily_qty_by_branch
+- Impact: Fixes super admin dashboard showing 422 (incorrect accumulated) instead of correct daily entries sum

@@ -41,6 +41,7 @@ class ManufacturingUserDashboard extends Component
     public ?int  $sellCategoryId  = null;
     public ?int  $sellProductId   = null;
     public string $sellQuantity   = '';
+    public string $sellItemSearch = ''; // Search term for filtering items
     public array $salesItems = []; // Items added to sell (current cart)
     public array $soldHistory = []; // Completed sales history (shown in table)
     public bool $sellMode = false; // Whether we're in sell mode
@@ -1082,24 +1083,29 @@ class ManufacturingUserDashboard extends Component
                     $meta['manufacturing_daily_qty_by_branch'] = [];
                 }
                 
+                // Check the last manufacturing date for THIS BRANCH
+                $lastManufactureDatePerBranch = $meta['manufacturing_date_per_branch'] ?? [];
+                if (!is_array($lastManufactureDatePerBranch)) {
+                    $lastManufactureDatePerBranch = [];
+                }
+                
                 // Get user's branch ID (integer key)
                 $userBranchId = (int)$branchIds[0];
+                $lastDateForThisBranch = $lastManufactureDatePerBranch[$userBranchId] ?? null;
                 
-                // Check if this product was already manufactured today
-                if (isset($meta['manufacturing_added_at'])) {
-                    $lastAddedDate = \Carbon\Carbon::parse($meta['manufacturing_added_at'])->toDateString();
-                    if ($lastAddedDate === $today) {
-                        // Same day - accumulate TODAY'S quantity for THIS BRANCH only
-                        $currentBranchDaily = (float)($meta['manufacturing_daily_qty_by_branch'][$userBranchId] ?? 0);
-                        $meta['manufacturing_daily_qty_by_branch'][$userBranchId] = $currentBranchDaily + $productQty;
-                    } else {
-                        // Different day - reset for today (clear old branch data, start fresh)
-                        $meta['manufacturing_daily_qty_by_branch'] = [];
-                        $meta['manufacturing_daily_qty_by_branch'][$userBranchId] = $productQty;
-                    }
+                // Check if THIS BRANCH manufactured today (not any branch)
+                if ($lastDateForThisBranch === $today) {
+                    // Same day - accumulate TODAY'S quantity for THIS BRANCH only
+                    $currentBranchDaily = (float)($meta['manufacturing_daily_qty_by_branch'][$userBranchId] ?? 0);
+                    $meta['manufacturing_daily_qty_by_branch'][$userBranchId] = $currentBranchDaily + $productQty;
                 } else {
-                    // First time manufacturing this product
+                    // This branch manufactured on a different day - reset THIS BRANCH only
+                    // Keep other branches' daily data intact!
                     $meta['manufacturing_daily_qty_by_branch'][$userBranchId] = $productQty;
+                    
+                    // Update the date this branch last manufactured
+                    $lastManufactureDatePerBranch[$userBranchId] = $today;
+                    $meta['manufacturing_date_per_branch'] = $lastManufactureDatePerBranch;
                 }
                 
                 // Also keep the old manufacturing_daily_qty for backward compatibility (global sum)
@@ -1112,8 +1118,20 @@ class ManufacturingUserDashboard extends Component
                 // Always update the timestamp to today
                 $meta['manufacturing_added_at'] = now()->toIso8601String();
 
-                // Store the newly manufactured quantity (the current addition)
-                $meta['new_mfr_quantity'] = $productQty;
+                // Store ONLY the CURRENT (latest) manufacturing quantity for display
+                // This is what was just entered in "Product Qty *" form, NOT accumulated
+                $meta['last_mfr_quantity'] = $productQty;
+
+                // Accumulate the newly manufactured quantity if adding to same product today
+                // (Check if this is same day by comparing with last date)
+                if ($lastDateForThisBranch === $today) {
+                    // Same day - accumulate new_mfr_quantity
+                    $currentNewMfr = (float)($meta['new_mfr_quantity'] ?? 0);
+                    $meta['new_mfr_quantity'] = $currentNewMfr + $productQty;
+                } else {
+                    // Different day - reset to just this addition
+                    $meta['new_mfr_quantity'] = $productQty;
+                }
                 
                 // Store the current seed deduction for display
                 $currentSeedQty = 0;
@@ -1374,6 +1392,33 @@ class ManufacturingUserDashboard extends Component
         $product->metadata = $meta;
         $product->save();
         
+        // Update THIS BRANCH'S daily manufacturing data if quantity changed
+        if ($newMfrDifference != 0 && !empty($userBranchIds)) {
+            $userBranchId = (int)$userBranchIds[0];
+            
+            // Initialize daily data structure if needed
+            if (!isset($meta['manufacturing_daily_qty_by_branch'])) {
+                $meta['manufacturing_daily_qty_by_branch'] = [];
+            }
+            if (!is_array($meta['manufacturing_daily_qty_by_branch'])) {
+                $meta['manufacturing_daily_qty_by_branch'] = [];
+            }
+            
+            // Update THIS BRANCH'S daily total
+            $currentDailyForBranch = (float)($meta['manufacturing_daily_qty_by_branch'][$userBranchId] ?? 0);
+            $meta['manufacturing_daily_qty_by_branch'][$userBranchId] = $currentDailyForBranch + $newMfrDifference;
+            
+            // Recalculate global daily sum (across all branches)
+            $globalDaily = 0;
+            foreach ($meta['manufacturing_daily_qty_by_branch'] as $qty) {
+                $globalDaily += (float)$qty;
+            }
+            $meta['manufacturing_daily_qty'] = $globalDaily;
+            
+            $product->metadata = $meta;
+            $product->save();
+        }
+        
         // Log stock movements for audit trail if there are differences
         if ($newMfrDifference != 0 || $usedQtyDifference != 0) {
             // Get location for this branch
@@ -1538,9 +1583,21 @@ class ManufacturingUserDashboard extends Component
                 $meta['seed_by_branch'][$userBranchId] = 0;
             }
             
-            // Reset new_mfr_quantity and current_seed_deduction to 0
+            // Reset new_mfr_quantity and current_seed_deduction to 0 (these are shared)
             $meta['new_mfr_quantity'] = 0;
             $meta['current_seed_deduction'] = 0;
+            
+            // Reset THIS BRANCH'S daily data
+            if (isset($meta['manufacturing_daily_qty_by_branch'][$userBranchId])) {
+                $meta['manufacturing_daily_qty_by_branch'][$userBranchId] = 0;
+            }
+            
+            // Recalculate global daily sum
+            $globalDaily = 0;
+            foreach ($meta['manufacturing_daily_qty_by_branch'] as $qty) {
+                $globalDaily += (float)$qty;
+            }
+            $meta['manufacturing_daily_qty'] = $globalDaily;
             
             // Only null out manufacturing_added_at if NO branch has a non-zero qty remaining
             if ($totalQty <= 0) {
@@ -1747,6 +1804,154 @@ class ManufacturingUserDashboard extends Component
     }
 
     // Get products for selected sell category — stock-aware, per type
+    // Get ALL items belonging to user's branch (no search filter) - for Item dropdown
+    #[Computed]
+    public function allSellProducts(): \Illuminate\Support\Collection
+    {
+        $user = auth()->user();
+        $userBranchIds = $user->assignedBranchIds();
+
+        // Get all active products
+        $products = Product::with('category')
+            ->where('status', 'active')
+            ->get();
+
+        return $products->filter(function ($product) use ($userBranchIds) {
+            // Check if this product belongs to user's branch (any source: manufactured, transferred, or purchased)
+            // Show all items belonging to the branch, no search filter
+            $belongsToBranch = $this->productBelongsToBranch($product, $userBranchIds);
+            
+            return $belongsToBranch;
+
+        })->map(function ($product) use ($userBranchIds) {
+            $product->available_qty = $this->calculateBranchAvailableQty($product, $userBranchIds);
+            return $product;
+        })->values();
+    }
+
+    #[Computed]
+    public function filteredSellProducts(): \Illuminate\Support\Collection
+    {
+        $user = auth()->user();
+        $userBranchIds = $user->assignedBranchIds();
+        $search = strtolower($this->sellItemSearch);
+
+        // Get all active products
+        $products = Product::with('category')
+            ->where('status', 'active')
+            ->get();
+
+        return $products->filter(function ($product) use ($userBranchIds, $search) {
+            // Apply search filter if entered
+            if (!empty($search)) {
+                $productName = strtolower($product->name);
+                if (strpos($productName, $search) === false) {
+                    return false;
+                }
+            }
+
+            // Check if this product belongs to user's branch (any source: manufactured, transferred, or purchased)
+            // Even if quantity is 0, show it if it belongs to the branch
+            $belongsToBranch = $this->productBelongsToBranch($product, $userBranchIds);
+            
+            return $belongsToBranch;
+
+        })->map(function ($product) use ($userBranchIds) {
+            $product->available_qty = $this->calculateBranchAvailableQty($product, $userBranchIds);
+            return $product;
+        })->values();
+    }
+
+    // Check if product belongs to user's branch (has any stock or history in branch)
+    private function productBelongsToBranch(Product $product, array $userBranchIds): bool
+    {
+        if (empty($userBranchIds)) {
+            return false;
+        }
+
+        // Check manufactured items
+        $meta = $product->metadata ?? [];
+        $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+        foreach ($userBranchIds as $branchId) {
+            if (isset($manufacturingByBranch[(int)$branchId])) {
+                return true;
+            }
+        }
+
+        // Check transferred items
+        $locationIds = Location::whereIn('branch_id', $userBranchIds)->pluck('id')->toArray();
+        if (!empty($locationIds)) {
+            $transferredCount = \DB::table('stock_movements')
+                ->where('item_type', 'product')
+                ->where('item_id', $product->id)
+                ->where('movement_type', StockMovement::TYPE_TRANSFER_IN)
+                ->where('reference_type', 'StockTransfer')
+                ->where('direction', 'in')
+                ->whereIn('location_id', $locationIds)
+                ->count();
+            
+            if ($transferredCount > 0) {
+                return true;
+            }
+        }
+
+        // Check purchased items
+        $purchasedCount = Purchase::where('purchases.product_id', $product->id)
+            ->where('purchases.purchase_type', Purchase::TYPE_PRODUCT)
+            ->whereIn('purchases.branch_id', $userBranchIds)
+            ->where('purchases.status', Purchase::STATUS_COMPLETED)
+            ->count();
+        
+        if ($purchasedCount > 0) {
+            return true;
+        }
+
+        return false;
+    }
+
+    // Calculate total available quantity (stock movements only, matching ProductTransfer::getSourceBalance exactly)
+    private function calculateBranchAvailableQty(Product $product, array $userBranchIds): float
+    {
+        if (empty($userBranchIds)) {
+            return 0;
+        }
+
+        // Get stock movements as SINGLE SOURCE OF TRUTH (identical to ProductTransfer::getSourceBalance)
+        $locationIds = Location::whereIn('branch_id', $userBranchIds)->pluck('id');
+        if ($locationIds->isEmpty()) {
+            return 0;
+        }
+
+        $stockIn = (float) \App\Models\StockMovement::whereIn('location_id', $locationIds)
+            ->where('item_type', 'product')
+            ->where('item_id', $product->id)
+            ->where('direction', 'in')
+            ->whereNotIn('movement_type', \App\Models\StockMovement::AVAILABLE_QTY_EXCLUDED_INBOUND)
+            ->sum('quantity');
+
+        $stockOut = (float) \App\Models\StockMovement::whereIn('location_id', $locationIds)
+            ->where('item_type', 'product')
+            ->where('item_id', $product->id)
+            ->where('direction', 'out')
+            ->whereIn('movement_type', \App\Models\StockMovement::AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND)
+            ->sum('quantity');
+
+        $movementBalance = max(0, (float)$stockIn - (float)$stockOut);
+
+        // If no StockMovement records, check for legacy metadata (exactly like ProductTransfer does)
+        if ($movementBalance == 0) {
+            $prod = \App\Models\Product::withoutGlobalScopes()->find($product->id);
+            if ($prod) {
+                $metadata = $prod->metadata ?? [];
+                $mfgQty = (float) ($metadata['manufacturing_quantity'] ?? 0);
+                return max(0, $mfgQty);
+            }
+        }
+
+        return max(0, $movementBalance);
+    }
+
+    // Get products for selected sell category — stock-aware, per type
     #[Computed]
     public function sellProducts(): \Illuminate\Support\Collection
     {
@@ -1913,13 +2118,16 @@ class ManufacturingUserDashboard extends Component
     public function addSellItem(): void
     {
         $this->validate([
-            'sellCategoryId' => 'required|integer|exists:categories,id',
             'sellProductId' => 'required|integer|exists:products,id',
             'sellQuantity' => 'required|numeric|min:0.001',
         ]);
 
         $product = Product::findOrFail($this->sellProductId);
-        $availableQty = $this->getSellAvailableQuantity();
+        $user = auth()->user();
+        $userBranchIds = $user->assignedBranchIds();
+        
+        // Get available quantity using the correct calculation
+        $availableQty = $this->calculateBranchAvailableQty($product, $userBranchIds);
         $sellQty = (float) $this->sellQuantity;
 
         // Check if enough quantity available
@@ -2125,8 +2333,8 @@ class ManufacturingUserDashboard extends Component
         $filtered = $products->filter(function ($product) use ($userBranchIds, $today) {
             $meta = $product->metadata ?? [];
             
-            // Must have manufacturing_quantity to be considered manufactured
-            if (!isset($meta['manufacturing_quantity']) || (float)$meta['manufacturing_quantity'] <= 0) {
+            // Must have new_mfr_quantity to be considered manufactured today
+            if (!isset($meta['new_mfr_quantity']) || (float)$meta['new_mfr_quantity'] <= 0) {
                 return false;
             }
 
@@ -2145,23 +2353,25 @@ class ManufacturingUserDashboard extends Component
                 return false;
             }
 
-            // For non-super-admin: ONLY show items manufactured BY THIS USER'S BRANCH
+            // For non-super-admin: ONLY show items manufactured BY THIS USER'S BRANCH TODAY
             if (!empty($userBranchIds)) {
-                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-                if (empty($manufacturingByBranch)) {
+                // Check manufacturing_daily_qty_by_branch for TODAY's quantities per branch
+                $manufacturingDailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
+                if (empty($manufacturingDailyByBranch)) {
                     return false;
                 }
 
-                // Check if ANY of user's branches have manufactured this product
-                $hasUserBranchData = false;
+                // Check if ANY of user's branches have manufactured this product TODAY
+                $hasUserBranchDailyData = false;
                 foreach ($userBranchIds as $branchId) {
-                    if (isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0) {
-                        $hasUserBranchData = true;
+                    $dailyQty = (float)($manufacturingDailyByBranch[$branchId] ?? $manufacturingDailyByBranch[(string)$branchId] ?? 0);
+                    if ($dailyQty > 0) {
+                        $hasUserBranchDailyData = true;
                         break;
                     }
                 }
                 
-                if (!$hasUserBranchData) {
+                if (!$hasUserBranchDailyData) {
                     return false;
                 }
             }
@@ -2171,29 +2381,11 @@ class ManufacturingUserDashboard extends Component
         })->map(function ($product) use ($userBranchIds) {
             $meta = $product->metadata ?? [];
             
-            // Sum quantity ONLY from THIS USER'S branches
-            $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-            $qty = 0;
-            $seedQty = 0;
-
-            if (!empty($userBranchIds)) {
-                // Non-super-admin: sum only their branch quantities
-                foreach ($userBranchIds as $branchId) {
-                    if (isset($manufacturingByBranch[$branchId])) {
-                        $qty += (float) $manufacturingByBranch[$branchId];
-                    }
-                }
-                $seedQty = (float) ($meta['seed_quantity_used'] ?? 0);
-            } else {
-                // Super admin: sum only branch quantities (do NOT include all branches)
-                // For super admin showing daily manufactured, only show their assigned business
-                foreach ($manufacturingByBranch as $qty_value) {
-                    if (is_numeric($qty_value)) {
-                        $qty += (float) $qty_value;
-                    }
-                }
-                $seedQty = (float) ($meta['seed_quantity_used'] ?? 0);
-            }
+            // Use last_mfr_quantity (the ACTUAL daily entry, not accumulated)
+            // This is the value shown in "New Mfr" column
+            $qty = (float)($meta['last_mfr_quantity'] ?? 0);
+            
+            $seedQty = (float) ($meta['seed_quantity_used'] ?? 0);
 
             return (object) [
                 'item_name'     => $product->name,

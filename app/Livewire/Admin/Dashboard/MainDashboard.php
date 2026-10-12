@@ -184,23 +184,41 @@ class MainDashboard extends Component
                 ->where('status', 'active')
                 ->whereNotNull('metadata')
                 ->get()
-                ->filter(function ($product) use ($today) {
+                ->filter(function ($product) use ($today, $user, $businessIds) {
                     $meta = $product->metadata ?? [];
                     if (!isset($meta['manufacturing_added_at'])) return false;
                     try {
                         $addedDate = \Carbon\Carbon::parse($meta['manufacturing_added_at'])->toDateString();
                         if ($addedDate === $today->toDateString()) {
-                            $qty = (float)($meta['manufacturing_daily_qty'] ?? $meta['manufacturing_quantity'] ?? 0);
-                            return $qty > 0;
+                            // Check if there's any daily manufacturing for this product today
+                            $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
+                            foreach ($dailyByBranch as $qty) {
+                                if ((float)$qty > 0) {
+                                    return true;
+                                }
+                            }
                         }
                     } catch (\Exception $e) {
                         return false;
                     }
                     return false;
                 })
-                ->sum(function($p) {
+                ->sum(function($p) use ($user, $businessIds) {
                     $meta = $p->metadata ?? [];
-                    return (float)($meta['manufacturing_daily_qty'] ?? $meta['manufacturing_quantity'] ?? 0);
+                    $branchIds = \App\Models\Branch::whereIn('business_id', $businessIds)->pluck('id');
+                    
+                    // Daily Manufactured = sum of this user's branches' daily manufacturing
+                    $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
+                    $qty = 0;
+                    foreach ($branchIds as $branchId) {
+                        // Check if this product was manufactured by one of the user's branches TODAY
+                        if ((int)($meta['manufactured_by_branch_id'] ?? 0) === (int)$branchId) {
+                            // Use last_mfr_quantity (actual daily entry), not accumulated daily_qty_by_branch
+                            $qty = (float)($meta['last_mfr_quantity'] ?? 0);
+                            break;
+                        }
+                    }
+                    return $qty;
                 });
 
             // Daily transfers — count transfer_in movements today (same as Super Admin)
@@ -285,8 +303,13 @@ class MainDashboard extends Component
                 try {
                     $addedDate = \Carbon\Carbon::parse($meta['manufacturing_added_at'])->toDateString();
                     if ($addedDate === $today->toDateString()) {
-                        $qty = (float)($meta['manufacturing_daily_qty'] ?? $meta['manufacturing_quantity'] ?? 0);
-                        return $qty > 0;
+                        // Check if there's any daily manufacturing for this product today
+                        $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
+                        foreach ($dailyByBranch as $qty) {
+                            if ((float)$qty > 0) {
+                                return true;
+                            }
+                        }
                     }
                 } catch (\Exception $e) {
                     return false;
@@ -295,7 +318,10 @@ class MainDashboard extends Component
             })
             ->sum(function($p) {
                 $meta = $p->metadata ?? [];
-                return (float)($meta['manufacturing_daily_qty'] ?? $meta['manufacturing_quantity'] ?? 0);
+                // Daily Manufactured = sum of all branches' daily manufacturing (global total)
+                // Use last_mfr_quantity (actual daily entry), not accumulated daily_qty_by_branch
+                $qty = (float)($meta['last_mfr_quantity'] ?? 0);
+                return $qty;
             });
 
         $dailyTransfers = DB::table('stock_movements')
