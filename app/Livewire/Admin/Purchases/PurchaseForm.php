@@ -538,13 +538,11 @@ class PurchaseForm extends Component
     // ── Pre-fill prices when item selected (if not already filled) ────────
     public function updatedProductId(): void
     {
+        // Do nothing if no product selected
+        if (!$this->product_id) return;
+
         // Clear errors when product changes
         $this->sellingPriceError = '';
-        
-        // Clear quantity - user must enter it manually
-        $this->quantity = '';
-
-        if (!$this->product_id) return;
 
         $product = Product::withoutGlobalScopes()->find($this->product_id);
         if ($product) {
@@ -559,6 +557,10 @@ class PurchaseForm extends Component
                 $this->selling_price = (string) (float) $product->selling_price;
             }
         }
+        
+        // Clear quantity and unit AFTER setting prices - user must enter them manually
+        $this->quantity = '';
+        $this->unit = '';
     }
 
     public function updatedUnitPrice(): void    { $this->validateSellingPrice(); }
