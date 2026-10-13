@@ -863,28 +863,25 @@ class ReportDashboard extends Component
     {
         // Use the GM Manufacturing Report as the source of truth for manufactured products.
         $gmr = $this->getGmManufacturingReport($filters);
-        // $gmr is a collection of manufacturing rows.
-        // Group by product to aggregate quantities from all branches
-        $groupedRows = collect($gmr)->groupBy('product_id')->map(function ($group) {
-            $firstRow = $group->first();
-            return [
-                'item_name'     => $firstRow['item_name'] ?? $firstRow['product_id'] ?? '',
-                'category_name' => $firstRow['category_name'] ?? '—',
-                'quantity'      => $group->sum('mfg_qty'), // SUM all branches' manufactured quantities
-                'unit'          => $firstRow['unit'] ?? 'pcs',
-                'unit_price'    => $firstRow['selling_price'] ?? 0,
-                'total_selling' => round($group->sum('mfg_qty') * ($firstRow['selling_price'] ?? 0), 2),
-            ];
-        })->values();
-
-        // For non-manufacturing-staff users (sellers, general managers), use metadata-based quantities
-        // to match the sell page which uses manufacturing_by_branch
+        
         $user = auth()->user();
         $isManufacturingStaff = $user->can('manufacturing.produce')
             && !$user->can('business.update')
             && !$user->isSuperAdmin();
         
-        if (!$isManufacturingStaff && !$user->isSuperAdmin()) {
+        // For Super Admin: Show per-branch rows (don't aggregate)
+        if ($user->isSuperAdmin()) {
+            $rows = $gmr->map(function ($r) {
+                return [
+                    'item_name'     => $r['item_name'] ?? $r['product_id'] ?? '',
+                    'category_name' => $r['category_name'] ?? '—',
+                    'quantity'      => $r['mfg_qty'] ?? 0,
+                    'unit'          => $r['unit'] ?? 'pcs',
+                    'unit_price'    => $r['selling_price'] ?? 0,
+                    'total_selling' => $r['total_value'] ?? 0,
+                ];
+            })->values();
+        } elseif (!$isManufacturingStaff) {
             // Non-super-admin, non-manufacturing-staff (e.g., sellers, general managers)
             // Use metadata-based quantities to match sell page
             $userBranchIds = $user->assignedBranchIds();
@@ -919,16 +916,30 @@ class ReportDashboard extends Component
                 }
             }
             
-            $groupedRows = collect($metadataRows);
+            $rows = collect($metadataRows)->values();
+        } else {
+            // Manufacturing staff: Aggregate by product
+            $groupedRows = collect($gmr)->groupBy('product_id')->map(function ($group) {
+                $firstRow = $group->first();
+                return [
+                    'item_name'     => $firstRow['item_name'] ?? $firstRow['product_id'] ?? '',
+                    'category_name' => $firstRow['category_name'] ?? '—',
+                    'quantity'      => $group->sum('mfg_qty'),
+                    'unit'          => $firstRow['unit'] ?? 'pcs',
+                    'unit_price'    => $firstRow['selling_price'] ?? 0,
+                    'total_selling' => round($group->sum('mfg_qty') * ($firstRow['selling_price'] ?? 0), 2),
+                ];
+            })->values();
+            $rows = $groupedRows;
         }
 
         // Calculate totals for quantity and total selling price.
         $totals = [
-            'quantity'      => $groupedRows->sum('quantity'),
-            'total_selling' => $groupedRows->sum('total_selling'),
+            'quantity'      => $rows->sum('quantity'),
+            'total_selling' => $rows->sum('total_selling'),
         ];
 
-        return ['rows' => $groupedRows, 'totals' => $totals];
+        return ['rows' => $rows, 'totals' => $totals];
     }
 
     // ── Manufacturer Sales Report (for mfr_sales tab) ─────────────────────
