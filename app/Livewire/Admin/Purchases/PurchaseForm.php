@@ -565,7 +565,7 @@ class PurchaseForm extends Component
             }
         }
         
-        // Clear quantity and unit AFTER setting prices - user must enter them manually
+        // ALWAYS clear quantity and unit - user must enter them manually, do not auto-fill
         $this->quantity = '';
         $this->unit = '';
     }
