@@ -733,7 +733,7 @@ class ReportDashboard extends Component
                                         'selling_price'            => (float) $product->selling_price,
                                         'total_value'              => round((float)$qty * (float) $product->selling_price, 2),
                                         'seed_name'                => $meta['seed_name'] ?? '—',
-                                        'seed_qty_used'            => (float) ($meta['seed_quantity_used'] ?? 0) ?: (float) ($meta['current_seed_deduction'] ?? 0),
+                                        'seed_qty_used'            => (float) (($meta['seed_by_branch'][$branchId] ?? $meta['seed_by_branch'][(string)$branchId] ?? 0) ?: ($meta['seed_quantity_used'] ?? 0)),
                                         'seed_unit'                => $meta['seed_unit'] ?? 'kg',
                                         'last_mfg_at'              => isset($meta['manufacturing_added_at']) 
                                             ? \Carbon\Carbon::parse($meta['manufacturing_added_at'])->format('Y-m-d H:i:s')
@@ -813,7 +813,7 @@ class ReportDashboard extends Component
                     'selling_price'            => (float) $product->selling_price,
                     'total_value'              => round($mfgQty * (float) $product->selling_price, 2),
                     'seed_name'                => $meta['seed_name'] ?? '—',
-                    'seed_qty_used'            => (float) ($meta['seed_quantity_used'] ?? 0) ?: (float) ($meta['current_seed_deduction'] ?? 0),
+                    'seed_qty_used'            => (float) (($mfgBranchId && isset($meta['seed_by_branch'][$mfgBranchId]) ? $meta['seed_by_branch'][$mfgBranchId] : 0) ?: ($meta['seed_quantity_used'] ?? 0)),
                     'seed_unit'                => $meta['seed_unit'] ?? 'kg',
                     'last_mfg_at'              => isset($meta['manufacturing_added_at']) 
                         ? \Carbon\Carbon::parse($meta['manufacturing_added_at'])->format('Y-m-d H:i:s')
