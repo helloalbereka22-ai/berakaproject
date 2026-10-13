@@ -494,446 +494,251 @@ class ReportDashboard extends Component
     }
 
     // ── GM Manufacturing Report ───────────────────────────────────────────
-    // Shows manufactured products from FinishedGood records with per-batch seed usage
-    // Filters by date range (daily manufacturing items with daily seed used per batch)
+    // Shows manufactured products per product per branch using stock_movements as single source of truth
     private function getGmManufacturingReport(array $filters): \Illuminate\Support\Collection
     {
-        $user        = auth()->user();
-        
-        // Determine business scope:
-        // - If user selected a business (admin), use that
-        // - If manufacturer staff, use ONLY their assigned business
-        // - If super admin with no selection, show all
+        $user = auth()->user();
+
+        // Determine business scope based on user role
         $businessIds = [];
-        
         if ($this->businessId) {
-            // Admin selected a specific business
             $businessIds = [(int) $this->businessId];
         } else {
-            // Check if manufacturer staff
+            $isSuperAdmin = $user->isSuperAdmin();
+            $isGeneralManager = $user->can('business.update') && !$isSuperAdmin;
             $isManufacturingStaff = $user->can('manufacturing.produce')
                 && !$user->can('business.update')
-                && !$user->isSuperAdmin();
-            
+                && !$isSuperAdmin;
+
             if ($isManufacturingStaff) {
-                // Manufacturer staff: show ONLY their assigned business
+                $businessIds = $user->assignedBusinessIds();
+            } elseif ($isGeneralManager) {
                 $businessIds = $user->assignedBusinessIds();
             } else {
-                // Super admin with no selection: show all
-                $businessIds = $user->isSuperAdmin() 
-                    ? \App\Models\Business::withoutGlobalScopes()->pluck('id')->toArray() 
-                    : $user->assignedBusinessIds();
+                // Super admin: all businesses
+                $businessIds = Business::withoutGlobalScopes()->pluck('id')->toArray();
             }
         }
 
-        // Parse dates properly - handle both formats
+        // Determine branch scope
+        $branchIds = null;
+        $isSuperAdmin = $user->isSuperAdmin();
+        $isManufacturingStaff = $user->can('manufacturing.produce')
+            && !$user->can('business.update')
+            && !$isSuperAdmin;
+
+        if ($isManufacturingStaff) {
+            $branchIds = $user->assignedBranchIds();
+        } elseif ($filters['branch_id'] ?? null) {
+            $branchIds = [(int) $filters['branch_id']];
+        }
+
+        // Parse date filters
         $dateFrom = null;
         $dateTo = null;
         if (!empty($filters['date_from'])) {
             try {
-                // Try Y-m-d format (from HTML date input)
-                $dateFrom = \Carbon\Carbon::createFromFormat('Y-m-d', $filters['date_from'])->startOfDay();
+                $dateFrom = Carbon::createFromFormat('Y-m-d', $filters['date_from'])->startOfDay();
             } catch (\Exception $e) {
-                try {
-                    // Try m/d/Y format (for backwards compatibility)
-                    $dateFrom = \Carbon\Carbon::createFromFormat('m/d/Y', $filters['date_from'])->startOfDay();
-                } catch (\Exception $e2) {
-                    // Last resort: use parse
-                    $dateFrom = \Carbon\Carbon::parse($filters['date_from'])->startOfDay();
-                }
+                $dateFrom = Carbon::parse($filters['date_from'])->startOfDay();
             }
         }
         if (!empty($filters['date_to'])) {
             try {
-                // Try Y-m-d format (from HTML date input)
-                $dateTo = \Carbon\Carbon::createFromFormat('Y-m-d', $filters['date_to'])->endOfDay();
+                $dateTo = Carbon::createFromFormat('Y-m-d', $filters['date_to'])->endOfDay();
             } catch (\Exception $e) {
-                try {
-                    // Try m/d/Y format (for backwards compatibility)
-                    $dateTo = \Carbon\Carbon::createFromFormat('m/d/Y', $filters['date_to'])->endOfDay();
-                } catch (\Exception $e2) {
-                    // Last resort: use parse
-                    $dateTo = \Carbon\Carbon::parse($filters['date_to'])->endOfDay();
-                }
+                $dateTo = Carbon::parse($filters['date_to'])->endOfDay();
             }
         }
 
-        // For manufacturing staff, restrict to their assigned branches only
-        $branchIds = null;
-        $isManufacturingStaff = $user->can('manufacturing.produce')
-            && !$user->can('business.update')
-            && !$user->isSuperAdmin();
-        
-        if ($isManufacturingStaff) {
-            $branchIds = $user->assignedBranchIds();
-        } elseif ($filters['branch_id'] ?? null) {
-            // For non-manufacturing-staff, use the selected branch filter if provided
-            $branchIds = [(int) $filters['branch_id']];
-        }
-
-        // Get FinishedGood records within the date range to show daily manufacturing
-        $finishedGoods = \App\Models\FinishedGood::query()
-            ->with(['product.category', 'product.business', 'batch.rawMaterialConsumptions.rawMaterial'])
-            ->whereHas('product', function($q) use ($businessIds) {
-                $q->whereIn('business_id', $businessIds)
-                  ->whereIn('type', ['finished_product', 'bottle_product']);
+        // Query: Get all production_output movements per product per branch
+        // These represent manufactured quantities
+        $productionOutputs = DB::table('stock_movements')
+            ->join('products', function ($join) {
+                $join->on('stock_movements.item_id', '=', 'products.id')
+                    ->where('stock_movements.item_type', '=', 'product');
             })
-            ->whereHas('batch', function($q) use ($dateFrom, $dateTo, $branchIds) {
-                // Filter by date range on batch completion date (when manufacturing finished)
-                if ($dateFrom) {
-                    $q->where('completed_at', '>=', $dateFrom);
-                }
-                if ($dateTo) {
-                    $q->where('completed_at', '<=', $dateTo);
-                }
-                // For manufacturing staff, filter by their assigned branches
-                if ($branchIds) {
-                    $q->whereIn('branch_id', $branchIds);
-                }
-            })
-            ->when($filters['category_id'] ?? null, fn($q, $v) => 
-                $q->whereHas('product', fn($sq) => $sq->where('category_id', $v))
+            ->join('categories', 'products.category_id', '=', 'categories.id')
+            ->join('branches', 'stock_movements.branch_id', '=', 'branches.id')
+            ->join('business', 'branches.business_id', '=', 'business.id')
+            ->where('stock_movements.movement_type', 'production_output')
+            ->where('stock_movements.direction', 'in')
+            ->whereIn('products.type', ['finished_product', 'bottle_product'])
+            ->whereIn('products.business_id', $businessIds)
+            ->when($branchIds, fn($q) => $q->whereIn('stock_movements.branch_id', $branchIds))
+            ->when($this->mfrCategoryId, fn($q) => $q->where('products.category_id', (int) $this->mfrCategoryId))
+            ->when($this->mfrItemId, fn($q) => $q->where('products.id', (int) $this->mfrItemId))
+            ->select([
+                'stock_movements.item_id as product_id',
+                'stock_movements.branch_id',
+                'products.name as item_name',
+                'products.unit',
+                'products.selling_price',
+                'categories.name as category_name',
+                'branches.name as branch_name',
+                'business.name as business_name',
+                'stock_movements.created_by',
+                DB::raw('SUM(stock_movements.quantity) as mfg_qty'),
+                DB::raw('MAX(stock_movements.moved_at) as last_mfg_at'),
+            ])
+            ->groupBy(
+                'stock_movements.item_id',
+                'stock_movements.branch_id',
+                'products.name',
+                'products.unit',
+                'products.selling_price',
+                'categories.name',
+                'branches.name',
+                'business.name',
+                'stock_movements.created_by'
             )
-            // Also filter by mfr-specific category and item
-            ->when($this->mfrCategoryId ?? null, fn($q) => 
-                $q->whereHas('product', fn($sq) => $sq->where('category_id', $this->mfrCategoryId))
-            )
-            ->when($this->mfrItemId ?? null, fn($q) => 
-                $q->where('product_id', $this->mfrItemId)
-            )
-            ->orderByDesc('created_at')
             ->get();
 
-        $reportRows = $finishedGoods->map(function ($fg) {
-            $product = $fg->product;
-            $batch = $fg->batch;
-            
-            if (!$product || !$batch) return null;
+        // For each product+branch, calculate new_mfr_quantity (within date filter)
+        $newMfrMap = DB::table('stock_movements')
+            ->where('movement_type', 'production_output')
+            ->where('direction', 'in')
+            ->where('item_type', 'product')
+            ->whereIn('stock_movements.item_id', $productionOutputs->pluck('product_id')->unique()->toArray())
+            ->when($dateFrom, fn($q) => $q->where('moved_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->where('moved_at', '<=', $dateTo))
+            ->select([
+                'item_id as product_id',
+                'branch_id',
+                DB::raw('SUM(quantity) as new_qty'),
+            ])
+            ->groupBy('item_id', 'branch_id')
+            ->get()
+            ->keyBy(fn($r) => $r->product_id . '_' . $r->branch_id);
 
-            // Get seed consumption from this batch (per-batch, not accumulated)
-            $seedConsumption = $batch->rawMaterialConsumptions()->first();
-            $seedQty = $seedConsumption ? (float) $seedConsumption->getEffectiveQuantity() : 0;
-            $seedName = $seedConsumption?->rawMaterial?->name ?? '—';
-            $seedUnit = $seedConsumption?->rawMaterial?->unit ?? 'kg';
-            
-            // Get manufacturer branch name
-            $manufacturerBy = '—';
-            if ($batch->branch_id) {
-                $branch = \App\Models\Branch::find($batch->branch_id);
-                $manufacturerBy = $branch?->name ?? '—';
-            }
+        // For each product, get production_consumption movements to calculate seed usage
+        $seedMap = DB::table('stock_movements')
+            ->where('movement_type', 'production_consumption')
+            ->where('item_type', 'product')
+            ->where('direction', 'out')
+            ->whereIn('stock_movements.item_id', $productionOutputs->pluck('product_id')->unique()->toArray())
+            ->select([
+                'item_id as product_id',
+                DB::raw('SUM(quantity) as total_seed_consumed'),
+            ])
+            ->groupBy('item_id')
+            ->get()
+            ->keyBy('product_id');
+
+        // Calculate available quantities per product per branch (in - out for all movement types)
+        $availableMap = DB::table('stock_movements')
+            ->where('item_type', 'product')
+            ->whereIn('stock_movements.item_id', $productionOutputs->pluck('product_id')->unique()->toArray())
+            ->select([
+                'item_id as product_id',
+                'branch_id',
+                DB::raw('SUM(CASE WHEN direction = "in" THEN quantity ELSE -quantity END) as available_qty'),
+            ])
+            ->groupBy('item_id', 'branch_id')
+            ->get()
+            ->keyBy(fn($r) => $r->product_id . '_' . $r->branch_id);
+
+        // Get username of user who created most recent production_output for each product+branch
+        $userMap = DB::table('stock_movements')
+            ->join('users', 'stock_movements.created_by', '=', 'users.id')
+            ->where('movement_type', 'production_output')
+            ->where('direction', 'in')
+            ->where('item_type', 'product')
+            ->whereIn('stock_movements.item_id', $productionOutputs->pluck('product_id')->unique()->toArray())
+            ->select([
+                'stock_movements.item_id as product_id',
+                'stock_movements.branch_id',
+                'users.name as username',
+                'stock_movements.moved_at',
+            ])
+            ->orderByDesc('stock_movements.moved_at')
+            ->get()
+            ->unique(fn($r) => $r->product_id . '_' . $r->branch_id)
+            ->keyBy(fn($r) => $r->product_id . '_' . $r->branch_id);
+
+        // Map results to report format
+        $rows = $productionOutputs->map(function ($row) use ($newMfrMap, $seedMap, $availableMap, $userMap) {
+            $key = $row->product_id . '_' . $row->branch_id;
+            $newMfr = $newMfrMap->get($key);
+            $seedData = $seedMap->get($row->product_id);
+            $availData = $availableMap->get($key);
+            $userData = $userMap->get($key);
+
+            $newMfrQty = $newMfr ? (float) $newMfr->new_qty : 0;
+            $usedSeedQty = $seedData ? (float) $seedData->total_seed_consumed : 0;
+            $usedSeedQty = abs($usedSeedQty); // production_consumption is stored as negative
 
             return [
-                'product_id'       => $product->id,
-                'item_name'        => $product->name,
-                'category_name'    => $product->category?->name ?? '—',
-                'business_name'    => $product->business?->name ?? '—',
-                'manufactured_by'  => $manufacturerBy,
-                'mfg_qty'          => (float) $fg->quantity,
-                'unit'             => $product->unit ?? 'pcs',
-                'selling_price'    => (float) $product->selling_price,
-                'total_value'      => round((float) $fg->quantity * (float) $product->selling_price, 2),
-                'seed_name'        => $seedName,
-                'seed_qty_used'    => $seedQty,
-                'seed_unit'        => $seedUnit,
-                'last_mfg_at'      => $batch->completed_at?->format('Y-m-d H:i:s') ?? $fg->created_at->format('Y-m-d H:i:s'),
+                'product_id'               => (int) $row->product_id,
+                'item_name'                => $row->item_name,
+                'category_name'            => $row->category_name,
+                'business_name'            => $row->business_name,
+                'manufactured_by'          => $row->branch_name,
+                'manufactured_by_username' => $userData ? $userData->username : '—',
+                'manufactured_by_branch'   => $row->branch_name,
+                'new_mfr_quantity'         => $newMfrQty,
+                'mfg_qty'                  => (float) $row->mfg_qty,
+                'used_seed_qty'            => $usedSeedQty,
+                'unit'                     => $row->unit ?? 'pcs',
+                'selling_price'            => (float) $row->selling_price,
+                'total_value'              => round((float) $row->mfg_qty * (float) $row->selling_price, 2),
+                'seed_name'                => '—',
+                'seed_qty_used'            => 0,
+                'seed_unit'                => 'kg',
+                'last_mfg_at'              => $row->last_mfg_at ? Carbon::parse($row->last_mfg_at)->format('Y-m-d H:i:s') : '—',
             ];
-        })->filter()->values();
+        })->sortByDesc('last_mfg_at');
 
-        // Get user's assigned branch IDs for per-branch filtering
-        $userBranchIds = $user->assignedBranchIds();
-        
-        // For users without explicit branch assignment: resolve from business
-        if (empty($userBranchIds) && !$user->isSuperAdmin()) {
-            $userBusinessIds = $user->assignedBusinessIds();
-            if (!empty($userBusinessIds)) {
-                // Get all branches for assigned businesses
-                $userBranchIds = Branch::whereIn('business_id', $userBusinessIds)
-                    ->pluck('id')
-                    ->toArray();
-            } else {
-                // Fallback: if no business assignment either, show all branches (for GM with broad access)
-                $userBranchIds = Branch::pluck('id')->toArray();
-            }
-        }
-
-        // If a specific branch is selected in filters, use only that branch
-        $filterBranchIds = $userBranchIds;
-        if ($filters['branch_id'] ?? null) {
-            $filterBranchIds = [(int) $filters['branch_id']];
-        }
-
-        // Also include products from Product metadata (manufacturing_quantity stored in metadata)
-        $productMetaItems = \App\Models\Product::withoutGlobalScopes()
-            ->whereIn('business_id', $businessIds)
-            ->where('status', 'active')
-            ->get()
-            ->filter(function ($product) use ($dateFrom, $dateTo, $user, $filterBranchIds) {
-                $meta = $product->metadata ?? [];
-                
-                // For non-super-admin: only show items manufactured by their branch
-                if (!$user->isSuperAdmin()) {
-                    $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-                    $hasUserBranchContribution = false;
-                    
-                    // Check if any filtered branch has this product manufactured
-                    foreach ($filterBranchIds as $branchId) {
-                        if (isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0) {
-                            $hasUserBranchContribution = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!$hasUserBranchContribution) {
-                        return false;  // Skip if filtered branch didn't manufacture
-                    }
-                }
-                
-                // For super admin: show all items with manufacturing_quantity
-                if (!isset($meta['manufacturing_quantity']) || (float)$meta['manufacturing_quantity'] <= 0) {
-                    return false;
-                }
-
-                // Check date range
-                if ($dateFrom && isset($meta['manufacturing_added_at'])) {
-                    $addedAt = \Carbon\Carbon::parse($meta['manufacturing_added_at']);
-                    if ($addedAt < $dateFrom) return false;
-                }
-                if ($dateTo && isset($meta['manufacturing_added_at'])) {
-                    $addedAt = \Carbon\Carbon::parse($meta['manufacturing_added_at']);
-                    if ($addedAt > $dateTo) return false;
-                }
-
-                return true;
-            })
-            ->when($this->mfrCategoryId ?? null, fn($collection) => 
-                $collection->filter(fn($p) => $p->category_id == $this->mfrCategoryId)
-            )
-            ->when($this->mfrItemId ?? null, fn($collection) => 
-                $collection->filter(fn($p) => $p->id == $this->mfrItemId)
-            )
-            ->map(function ($product) use ($user, $userBranchIds) {
-                $meta = $product->metadata ?? [];
-                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-                $manufacturedByPerBranch = $meta['manufactured_by_per_branch'] ?? [];
-                
-                // For super admin: create separate rows for each branch that manufactured this item
-                if ($user->isSuperAdmin() && !empty($manufacturingByBranch)) {
-                    $rows = [];
-                    
-                    foreach ($manufacturingByBranch as $branchId => $qty) {
-                        if (is_numeric($branchId) && (float)$qty > 0) {
-                            $branch = \App\Models\Branch::find($branchId);
-                            if ($branch) {
-                                $username = $manufacturedByPerBranch[$branchId]['username'] ?? '—';
-                                
-                                // Get last_mfr_quantity for this specific branch
-                                // For the original manufacturing branch: use last_mfr_quantity
-                                // For branches that received transferred products: use the daily qty they created
-                                $branchLastMfrQty = 0;
-                                if ($branchId == ($meta['manufactured_by_branch_id'] ?? null)) {
-                                    $branchLastMfrQty = (float) ($meta['last_mfr_quantity'] ?? 0);
-                                } else {
-                                    // For other branches: check if they have daily manufacturing activity (transfers)
-                                    $dailyByBranch = $meta['manufacturing_daily_qty_by_branch'] ?? [];
-                                    $branchLastMfrQty = (float)($dailyByBranch[$branchId] ?? $dailyByBranch[(string)$branchId] ?? 0);
-                                }
-                                
-                                // ONLY add row if this branch has NEW Mfr quantity (manufactured or transferred TODAY)
-                                if ($branchLastMfrQty > 0) {
-                                    $rows[] = [
-                                        'product_id'               => $product->id,
-                                        'item_name'                => $product->name,
-                                        'category_name'            => $product->category?->name ?? '—',
-                                        'business_name'            => $product->business?->name ?? '—',
-                                        'manufactured_by'          => $branch->name,
-                                        'manufactured_by_username' => $username,
-                                        'manufactured_by_branch'   => $branch->name,
-                                        'new_mfr_quantity'         => $branchLastMfrQty,
-                                        'mfg_qty'                  => (float) $qty,
-                                        'used_seed_qty'            => (float) ($meta['current_seed_deduction'] ?? 0),
-                                        'unit'                     => $product->unit ?? 'pcs',
-                                        'selling_price'            => (float) $product->selling_price,
-                                        'total_value'              => round((float)$qty * (float) $product->selling_price, 2),
-                                        'seed_name'                => $meta['seed_name'] ?? '—',
-                                        'seed_qty_used'            => (float) (($meta['seed_by_branch'][$branchId] ?? $meta['seed_by_branch'][(string)$branchId] ?? 0) ?: ($meta['seed_quantity_used'] ?? 0)),
-                                        'seed_unit'                => $meta['seed_unit'] ?? 'kg',
-                                        'last_mfg_at'              => isset($meta['manufacturing_added_at']) 
-                                            ? \Carbon\Carbon::parse($meta['manufacturing_added_at'])->format('Y-m-d H:i:s')
-                                            : '—',
-                                    ];
-                                }
-                            }
-                        }
-                    }
-                    
-                    return $rows;
-                }
-                
-                // For non-admin: show one row per product (like Super Admin) but filtered to their branches
-                // If any of their branches manufactured this product, show ONE row with the latest entry
-                $mfgQty = 0;
-                $branchName = '—';
-                $manufacturerUsername = '—';
-                $mfgBranchId = isset($meta['manufactured_by_branch_id']) ? (int)$meta['manufactured_by_branch_id'] : null;
-                
-                // Sum quantities across all user's branches
-                foreach ($userBranchIds as $userBranchId) {
-                    if (isset($manufacturingByBranch[$userBranchId]) && (float)$manufacturingByBranch[$userBranchId] > 0) {
-                        $mfgQty += (float) $manufacturingByBranch[$userBranchId];
-                        
-                        // Use the branch that made the LATEST entry (manufactured_by_branch_id)
-                        // not just the last one in the loop
-                        if ($userBranchId == $mfgBranchId) {
-                            $branch = \App\Models\Branch::find($userBranchId);
-                            $branchName = $branch?->name ?? '—';
-                            
-                            // Get username for the branch that made the latest entry
-                            if (isset($manufacturedByPerBranch[$userBranchId])) {
-                                $manufacturerUsername = $manufacturedByPerBranch[$userBranchId]['username'] ?? '—';
-                            }
-                        }
-                    }
-                }
-                
-                // If no branch found yet (manufactured_by_branch_id not in user's branches), use first one
-                if ($branchName === '—' && $mfgQty > 0) {
-                    foreach ($userBranchIds as $userBranchId) {
-                        if (isset($manufacturingByBranch[$userBranchId]) && (float)$manufacturingByBranch[$userBranchId] > 0) {
-                            $branch = \App\Models\Branch::find($userBranchId);
-                            $branchName = $branch?->name ?? '—';
-                            if (isset($manufacturedByPerBranch[$userBranchId])) {
-                                $manufacturerUsername = $manufacturedByPerBranch[$userBranchId]['username'] ?? '—';
-                            }
-                            break;
-                        }
-                    }
-                }
-                
-                // Only return if any branch has manufacturing data for this product
-                if ($mfgQty <= 0) {
-                    return [];
-                }
-                
-                // Filter out rows where there's no NEW manufacturing today (New Mfr = 0)
-                $newMfrQty = (float) ($meta['last_mfr_quantity'] ?? 0);
-                if ($newMfrQty <= 0) {
-                    return [];
-                }
-                
-                return [[
-                    'product_id'               => $product->id,
-                    'item_name'                => $product->name,
-                    'category_name'            => $product->category?->name ?? '—',
-                    'business_name'            => $product->business?->name ?? '—',
-                    'manufactured_by'          => $branchName,
-                    'manufactured_by_username' => $manufacturerUsername,
-                    'manufactured_by_branch'   => $branchName,
-                    'new_mfr_quantity'         => (float) ($meta['last_mfr_quantity'] ?? 0),
-                    'mfg_qty'                  => $mfgQty,
-                    'used_seed_qty'            => (float) ($meta['current_seed_deduction'] ?? 0),
-                    'unit'                     => $product->unit ?? 'pcs',
-                    'selling_price'            => (float) $product->selling_price,
-                    'total_value'              => round($mfgQty * (float) $product->selling_price, 2),
-                    'seed_name'                => $meta['seed_name'] ?? '—',
-                    'seed_qty_used'            => (float) (($mfgBranchId && isset($meta['seed_by_branch'][$mfgBranchId]) ? $meta['seed_by_branch'][$mfgBranchId] : 0) ?: ($meta['seed_quantity_used'] ?? 0)),
-                    'seed_unit'                => $meta['seed_unit'] ?? 'kg',
-                    'last_mfg_at'              => isset($meta['manufacturing_added_at']) 
-                        ? \Carbon\Carbon::parse($meta['manufacturing_added_at'])->format('Y-m-d H:i:s')
-                        : '—',
-                ]];
-            })
-            ->flatten(1)
-            ->values();
-
-        // Merge both sources and convert to array
-        $allArray = array_merge($reportRows->toArray(), $productMetaItems->toArray());
-        
-        // Sort by last_mfg_at descending
-        usort($allArray, function ($a, $b) {
-            $dateA = $a['last_mfg_at'] ?? '';
-            $dateB = $b['last_mfg_at'] ?? '';
-            return strcmp($dateB, $dateA); // Descending (B - A)
-        });
-        
-        return collect($allArray)->values();
+        return $rows->values();
     }
 
     private function getManufacturerProductReport(array $filters): array
     {
-        // Use the GM Manufacturing Report as the source of truth for manufactured products.
-        $gmr = $this->getGmManufacturingReport($filters);
-        
         $user = auth()->user();
-        $isManufacturingStaff = $user->can('manufacturing.produce')
-            && !$user->can('business.update')
-            && !$user->isSuperAdmin();
-        
-        // For Super Admin: Show per-branch rows (don't aggregate)
-        if ($user->isSuperAdmin()) {
-            $rows = $gmr->map(function ($r) {
-                return [
-                    'item_name'     => $r['item_name'] ?? $r['product_id'] ?? '',
-                    'category_name' => $r['category_name'] ?? '—',
-                    'quantity'      => $r['mfg_qty'] ?? 0,
-                    'unit'          => $r['unit'] ?? 'pcs',
-                    'unit_price'    => $r['selling_price'] ?? 0,
-                    'total_selling' => $r['total_value'] ?? 0,
-                ];
-            })->values();
-        } elseif (!$isManufacturingStaff) {
-            // Non-super-admin, non-manufacturing-staff (e.g., sellers, general managers)
-            // Use metadata-based quantities to match sell page
-            $userBranchIds = $user->assignedBranchIds();
-            
-            // Get all finished products and their manufacturing_by_branch metadata
-            $products = \App\Models\Product::withoutGlobalScopes()
-                ->whereIn('type', ['finished_product', 'bottle_product'])
-                ->get();
-            
-            $metadataRows = [];
-            foreach ($products as $product) {
-                $meta = $product->metadata ?? [];
-                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-                
-                $totalQty = 0;
-                foreach ($userBranchIds as $branchId) {
-                    $branchIdInt = (int)$branchId;
-                    if (isset($manufacturingByBranch[$branchIdInt])) {
-                        $totalQty += (float)$manufacturingByBranch[$branchIdInt];
-                    }
-                }
-                
-                if ($totalQty > 0) {
-                    $metadataRows[] = [
-                        'item_name'     => $product->name,
-                        'category_name' => $product->category?->name ?? '—',
-                        'quantity'      => $totalQty,
-                        'unit'          => $product->unit ?? 'pcs',
-                        'unit_price'    => (float)$product->selling_price,
-                        'total_selling' => round($totalQty * (float)$product->selling_price, 2),
-                    ];
-                }
-            }
-            
-            $rows = collect($metadataRows)->values();
-        } else {
-            // Manufacturing staff: Aggregate by product
-            $groupedRows = collect($gmr)->groupBy('product_id')->map(function ($group) {
-                $firstRow = $group->first();
-                return [
-                    'item_name'     => $firstRow['item_name'] ?? $firstRow['product_id'] ?? '',
-                    'category_name' => $firstRow['category_name'] ?? '—',
-                    'quantity'      => $group->sum('mfg_qty'),
-                    'unit'          => $firstRow['unit'] ?? 'pcs',
-                    'unit_price'    => $firstRow['selling_price'] ?? 0,
-                    'total_selling' => round($group->sum('mfg_qty') * ($firstRow['selling_price'] ?? 0), 2),
-                ];
-            })->values();
-            $rows = $groupedRows;
-        }
 
-        // Calculate totals for quantity and total selling price.
+        // Determine user's assigned branches
+        $assignedBranchIds = $user->assignedBranchIds();
+
+        // Query: Get available qty per product per branch from stock_movements
+        // Available = SUM(in) - SUM(out) for all movement types
+        $availableQtys = DB::table('stock_movements')
+            ->join('products', function ($join) {
+                $join->on('stock_movements.item_id', '=', 'products.id')
+                    ->where('stock_movements.item_type', '=', 'product');
+            })
+            ->where('stock_movements.item_type', 'product')
+            ->whereIn('products.type', ['finished_product', 'bottle_product'])
+            ->whereIn('stock_movements.branch_id', $assignedBranchIds)
+            ->select([
+                'stock_movements.item_id as product_id',
+                'products.name as item_name',
+                'products.unit',
+                'products.selling_price',
+                'categories.name as category_name',
+                DB::raw('SUM(CASE WHEN stock_movements.direction = "in" THEN stock_movements.quantity ELSE -stock_movements.quantity END) as available_qty'),
+            ])
+            ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
+            ->groupBy('stock_movements.item_id', 'products.name', 'products.unit', 'products.selling_price', 'categories.name')
+            ->having('available_qty', '>', 0)
+            ->get();
+
+        // Map to report format
+        $rows = $availableQtys->map(function ($row) {
+            $quantity = (float) $row->available_qty;
+            $unitPrice = (float) $row->selling_price;
+            $totalSelling = round($quantity * $unitPrice, 2);
+
+            return [
+                'item_name'     => $row->item_name,
+                'category_name' => $row->category_name ?? '—',
+                'quantity'      => $quantity,
+                'unit'          => $row->unit ?? 'pcs',
+                'unit_price'    => $unitPrice,
+                'total_selling' => $totalSelling,
+            ];
+        });
+
+        // Calculate totals
         $totals = [
             'quantity'      => $rows->sum('quantity'),
             'total_selling' => $rows->sum('total_selling'),
