@@ -612,11 +612,14 @@ class ReportDashboard extends Component
             ->keyBy(fn($r) => $r->product_id . '_' . $r->branch_id);
 
         // For each product, get production_consumption movements to calculate seed usage
+        // Date-filtered to match the report's date range
         $seedMap = DB::table('stock_movements')
             ->where('movement_type', 'production_consumption')
             ->where('item_type', 'product')
             ->where('direction', 'out')
             ->whereIn('stock_movements.item_id', $productionOutputs->pluck('product_id')->unique()->toArray())
+            ->when($dateFrom, fn($q) => $q->where('moved_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->where('moved_at', '<=', $dateTo))
             ->select([
                 'item_id as product_id',
                 DB::raw('SUM(quantity) as total_seed_consumed'),
@@ -696,29 +699,33 @@ class ReportDashboard extends Component
     {
         $user = auth()->user();
 
-        // Determine user's assigned branches
+        // Determine user's assigned branches and businesses
         $assignedBranchIds = $user->assignedBranchIds();
+        $assignedBusinessIds = $user->assignedBusinessIds();
 
         // Query: Get available qty per product per branch from stock_movements
         // Available = SUM(in) - SUM(out) for all movement types
+        // Group by branch_id to show separate rows per branch
         $availableQtys = DB::table('stock_movements')
             ->join('products', function ($join) {
                 $join->on('stock_movements.item_id', '=', 'products.id')
                     ->where('stock_movements.item_type', '=', 'product');
             })
+            ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
             ->where('stock_movements.item_type', 'product')
             ->whereIn('products.type', ['finished_product', 'bottle_product'])
             ->whereIn('stock_movements.branch_id', $assignedBranchIds)
+            ->whereIn('products.business_id', $assignedBusinessIds)
             ->select([
                 'stock_movements.item_id as product_id',
+                'stock_movements.branch_id',
                 'products.name as item_name',
                 'products.unit',
                 'products.selling_price',
                 'categories.name as category_name',
                 DB::raw('SUM(CASE WHEN stock_movements.direction = "in" THEN stock_movements.quantity ELSE -stock_movements.quantity END) as available_qty'),
             ])
-            ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
-            ->groupBy('stock_movements.item_id', 'products.name', 'products.unit', 'products.selling_price', 'categories.name')
+            ->groupBy('stock_movements.item_id', 'stock_movements.branch_id', 'products.name', 'products.unit', 'products.selling_price', 'categories.name')
             ->having('available_qty', '>', 0)
             ->get();
 
