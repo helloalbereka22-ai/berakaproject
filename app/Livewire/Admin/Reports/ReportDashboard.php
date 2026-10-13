@@ -868,6 +868,51 @@ class ReportDashboard extends Component
             ];
         })->values();
 
+        // For non-manufacturing-staff users (sellers, general managers), use metadata-based quantities
+        // to match the sell page which uses manufacturing_by_branch
+        $user = auth()->user();
+        $isManufacturingStaff = $user->can('manufacturing.produce')
+            && !$user->can('business.update')
+            && !$user->isSuperAdmin();
+        
+        if (!$isManufacturingStaff && !$user->isSuperAdmin()) {
+            // Non-super-admin, non-manufacturing-staff (e.g., sellers, general managers)
+            // Use metadata-based quantities to match sell page
+            $userBranchIds = $user->assignedBranchIds();
+            
+            // Get all finished products and their manufacturing_by_branch metadata
+            $products = \App\Models\Product::withoutGlobalScopes()
+                ->whereIn('type', ['finished_product', 'bottle_product'])
+                ->get();
+            
+            $metadataRows = [];
+            foreach ($products as $product) {
+                $meta = $product->metadata ?? [];
+                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+                
+                $totalQty = 0;
+                foreach ($userBranchIds as $branchId) {
+                    $branchIdInt = (int)$branchId;
+                    if (isset($manufacturingByBranch[$branchIdInt])) {
+                        $totalQty += (float)$manufacturingByBranch[$branchIdInt];
+                    }
+                }
+                
+                if ($totalQty > 0) {
+                    $metadataRows[] = [
+                        'item_name'     => $product->name,
+                        'category_name' => $product->category?->name ?? '—',
+                        'quantity'      => $totalQty,
+                        'unit'          => $product->unit ?? 'pcs',
+                        'unit_price'    => (float)$product->selling_price,
+                        'total_selling' => round($totalQty * (float)$product->selling_price, 2),
+                    ];
+                }
+            }
+            
+            $groupedRows = collect($metadataRows);
+        }
+
         // Calculate totals for quantity and total selling price.
         $totals = [
             'quantity'      => $groupedRows->sum('quantity'),
