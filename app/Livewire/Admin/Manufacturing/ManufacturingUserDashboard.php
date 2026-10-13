@@ -136,6 +136,18 @@ class ManufacturingUserDashboard extends Component
         return $business && stripos($business->name, 'Al-Baraka') !== false && stripos($business->name, 'Lubricating') !== false;
     }
 
+    // ── Date filter lifecycle hooks ────────────────────────────────────────
+    // Bust the #[Computed] cache when date filters change so items recompute
+    public function updatedFilterFromDate(): void
+    {
+        unset($this->manufacturediItems);
+    }
+
+    public function updatedFilterToDate(): void
+    {
+        unset($this->manufacturediItems);
+    }
+
     // ── Livewire cascading selection hooks ────────────────────────────────
     public function updatedSalesCategoryId(): void
     {
@@ -1244,6 +1256,28 @@ class ManufacturingUserDashboard extends Component
                 }
 
                 \Log::info('addSalesItem raw materials deducted');
+                
+                // Record production output movement for the manufactured product
+                $user = auth()->user();
+                $userBranchIds = $user->assignedBranchIds();
+                if (!empty($userBranchIds)) {
+                    $userBranchId = (int)$userBranchIds[0];
+                    $location = \App\Models\Location::where('branch_id', $userBranchId)->first();
+                    
+                    if ($location) {
+                        app(\App\Services\InventoryService::class)->recordMovement(
+                            $location->id, 'product', $product->id,
+                            \App\Models\StockMovement::TYPE_PRODUCTION_OUTPUT,
+                            $productQty, 0.0,
+                            ['notes' => 'Manufactured product']
+                        );
+                        \Log::info('addSalesItem production_output movement recorded', [
+                            'productId' => $product->id,
+                            'quantity' => $productQty,
+                            'locationId' => $location->id,
+                        ]);
+                    }
+                }
             });
         } catch (\Throwable $e) {
             \Log::error('addSalesItem database operation failed: ' . $e->getMessage(), [
