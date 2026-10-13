@@ -566,6 +566,9 @@ class ReportDashboard extends Component
         
         if ($isManufacturingStaff) {
             $branchIds = $user->assignedBranchIds();
+        } elseif ($filters['branch_id'] ?? null) {
+            // For non-manufacturing-staff, use the selected branch filter if provided
+            $branchIds = [(int) $filters['branch_id']];
         }
 
         // Get FinishedGood records within the date range to show daily manufacturing
