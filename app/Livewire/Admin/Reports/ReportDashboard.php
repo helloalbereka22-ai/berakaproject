@@ -657,12 +657,18 @@ class ReportDashboard extends Component
             }
         }
 
+        // If a specific branch is selected in filters, use only that branch
+        $filterBranchIds = $userBranchIds;
+        if ($filters['branch_id'] ?? null) {
+            $filterBranchIds = [(int) $filters['branch_id']];
+        }
+
         // Also include products from Product metadata (manufacturing_quantity stored in metadata)
         $productMetaItems = \App\Models\Product::withoutGlobalScopes()
             ->whereIn('business_id', $businessIds)
             ->where('status', 'active')
             ->get()
-            ->filter(function ($product) use ($dateFrom, $dateTo, $user, $userBranchIds) {
+            ->filter(function ($product) use ($dateFrom, $dateTo, $user, $filterBranchIds) {
                 $meta = $product->metadata ?? [];
                 
                 // For non-super-admin: only show items manufactured by their branch
@@ -670,8 +676,8 @@ class ReportDashboard extends Component
                     $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
                     $hasUserBranchContribution = false;
                     
-                    // Check if any user branch (or all branches if GM) have this product manufactured
-                    foreach ($userBranchIds as $branchId) {
+                    // Check if any filtered branch has this product manufactured
+                    foreach ($filterBranchIds as $branchId) {
                         if (isset($manufacturingByBranch[$branchId]) && (float)$manufacturingByBranch[$branchId] > 0) {
                             $hasUserBranchContribution = true;
                             break;
@@ -679,7 +685,7 @@ class ReportDashboard extends Component
                     }
                     
                     if (!$hasUserBranchContribution) {
-                        return false;  // Skip if user's branch didn't manufacture
+                        return false;  // Skip if filtered branch didn't manufacture
                     }
                 }
                 
