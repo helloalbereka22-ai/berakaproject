@@ -183,7 +183,8 @@ unset($__errorArgs, $__bag); ?>
                     Quantity <span class="text-red-400">*</span>
                 </label>
                 <input 
-                    wire:model.blur="quantity" 
+                    wire:model.blur="quantity"
+                    wire:key="quantity-field"
                     type="number" 
                     step="0.001" 
                     min="0" 
@@ -229,7 +230,14 @@ unset($__errorArgs, $__bag); ?>
                 <label class="block text-[11px] font-semibold text-slate-400 mb-1.5">
                     Purchase Price (ETB) <span class="text-red-400">*</span>
                 </label>
-                <input wire:model="unit_price" type="number" step="0.01" min="0" placeholder="0.00" autocomplete="off"
+                <input 
+                    wire:model="unit_price"
+                    wire:key="unit-price-field"
+                    type="number" 
+                    step="0.01" 
+                    min="0" 
+                    placeholder="0.00" 
+                    autocomplete="off"
                     class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-mono text-white focus:border-indigo-500 outline-none transition">
                 <?php $__errorArgs = ['unit_price'];
 $__bag = $errors->getBag($__errorArgs[1] ?? 'default');

@@ -546,10 +546,19 @@ class PurchaseForm extends Component
     public function updatedProductId(): void
     {
         // Do nothing if no product selected
-        if (!$this->product_id) return;
+        if (!$this->product_id) {
+            $this->quantity = '';
+            $this->unit = '';
+            return;
+        }
 
         // Clear errors when product changes
         $this->sellingPriceError = '';
+
+        // IMMEDIATELY clear quantity and unit BEFORE any price logic
+        // This ensures they don't get filled with price values
+        $this->quantity = '';
+        $this->unit = '';
 
         $product = Product::withoutGlobalScopes()->find($this->product_id);
         if ($product) {
@@ -565,7 +574,7 @@ class PurchaseForm extends Component
             }
         }
         
-        // ALWAYS clear quantity and unit - user must enter them manually, do not auto-fill
+        // ALWAYS ensure quantity and unit are empty - user must enter them manually
         $this->quantity = '';
         $this->unit = '';
     }
