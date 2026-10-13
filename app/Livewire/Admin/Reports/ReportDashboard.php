@@ -558,6 +558,16 @@ class ReportDashboard extends Component
             }
         }
 
+        // For manufacturing staff, restrict to their assigned branches only
+        $branchIds = null;
+        $isManufacturingStaff = $user->can('manufacturing.produce')
+            && !$user->can('business.update')
+            && !$user->isSuperAdmin();
+        
+        if ($isManufacturingStaff) {
+            $branchIds = $user->assignedBranchIds();
+        }
+
         // Get FinishedGood records within the date range to show daily manufacturing
         $finishedGoods = \App\Models\FinishedGood::query()
             ->with(['product.category', 'product.business', 'batch.rawMaterialConsumptions.rawMaterial'])
@@ -565,13 +575,17 @@ class ReportDashboard extends Component
                 $q->whereIn('business_id', $businessIds)
                   ->whereIn('type', ['finished_product', 'bottle_product']);
             })
-            ->whereHas('batch', function($q) use ($dateFrom, $dateTo) {
+            ->whereHas('batch', function($q) use ($dateFrom, $dateTo, $branchIds) {
                 // Filter by date range on batch completion date (when manufacturing finished)
                 if ($dateFrom) {
                     $q->where('completed_at', '>=', $dateFrom);
                 }
                 if ($dateTo) {
                     $q->where('completed_at', '<=', $dateTo);
+                }
+                // For manufacturing staff, filter by their assigned branches
+                if ($branchIds) {
+                    $q->whereIn('branch_id', $branchIds);
                 }
             })
             ->when($filters['category_id'] ?? null, fn($q, $v) => 
