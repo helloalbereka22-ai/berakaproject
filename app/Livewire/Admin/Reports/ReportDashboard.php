@@ -716,7 +716,7 @@ class ReportDashboard extends Component
                                     $branchLastMfrQty = (float)($dailyByBranch[$branchId] ?? $dailyByBranch[(string)$branchId] ?? 0);
                                 }
                                 
-                                // ONLY add row if this branch has NEW Mfr quantity (manufactured or transferred)
+                                // ONLY add row if this branch has NEW Mfr quantity (manufactured or transferred TODAY)
                                 if ($branchLastMfrQty > 0) {
                                     $rows[] = [
                                         'product_id'               => $product->id,
@@ -727,11 +727,11 @@ class ReportDashboard extends Component
                                         'manufactured_by_username' => $username,
                                         'manufactured_by_branch'   => $branch->name,
                                         'new_mfr_quantity'         => $branchLastMfrQty,
-                                        'mfg_qty'                  => $branchLastMfrQty,
+                                        'mfg_qty'                  => (float) $qty,
                                         'used_seed_qty'            => (float) ($meta['current_seed_deduction'] ?? 0),
                                         'unit'                     => $product->unit ?? 'pcs',
                                         'selling_price'            => (float) $product->selling_price,
-                                        'total_value'              => round($branchLastMfrQty * (float) $product->selling_price, 2),
+                                        'total_value'              => round((float)$qty * (float) $product->selling_price, 2),
                                         'seed_name'                => $meta['seed_name'] ?? '—',
                                         'seed_qty_used'            => (float) ($meta['seed_quantity_used'] ?? 0),
                                         'seed_unit'                => $meta['seed_unit'] ?? 'kg',
