@@ -890,8 +890,8 @@ class ReportDashboard extends Component
         }
 
         // Query: Get available qty per product per branch from stock_movements
-        // Available = SUM(in) - SUM(out) for movements within the date range
-        // Group by branch_id to show separate rows per branch
+        // Available = SUM(production_output IN) - SUM(AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND OUT)
+        // This matches the manufacturing dashboard logic
         $availableQtys = DB::table('stock_movements')
             ->join('products', function ($join) {
                 $join->on('stock_movements.item_id', '=', 'products.id')
@@ -902,8 +902,6 @@ class ReportDashboard extends Component
             ->whereIn('products.type', ['finished_product', 'bottle_product'])
             ->whereIn('stock_movements.branch_id', $assignedBranchIds)
             ->whereIn('products.business_id', $assignedBusinessIds)
-            ->when($dateFrom, fn($q) => $q->where('stock_movements.moved_at', '>=', $dateFrom))
-            ->when($dateTo, fn($q) => $q->where('stock_movements.moved_at', '<=', $dateTo))
             ->select([
                 'stock_movements.item_id as product_id',
                 'stock_movements.branch_id',
@@ -911,7 +909,26 @@ class ReportDashboard extends Component
                 'products.unit',
                 'products.selling_price',
                 'categories.name as category_name',
-                DB::raw('SUM(CASE WHEN stock_movements.direction = "in" THEN stock_movements.quantity ELSE -stock_movements.quantity END) as available_qty'),
+                DB::raw('
+                    (
+                        SELECT COALESCE(SUM(quantity), 0) FROM stock_movements sm_in
+                        WHERE sm_in.item_id = stock_movements.item_id
+                          AND sm_in.branch_id = stock_movements.branch_id
+                          AND sm_in.item_type = "product"
+                          AND sm_in.direction = "in"
+                          AND sm_in.movement_type NOT IN ("' . implode('", "', StockMovement::AVAILABLE_QTY_EXCLUDED_INBOUND) . '")
+                    )
+                    -
+                    (
+                        SELECT COALESCE(SUM(quantity), 0) FROM stock_movements sm_out
+                        WHERE sm_out.item_id = stock_movements.item_id
+                          AND sm_out.branch_id = stock_movements.branch_id
+                          AND sm_out.item_type = "product"
+                          AND sm_out.direction = "out"
+                          AND sm_out.movement_type IN ("' . implode('", "', StockMovement::AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND) . '")
+                    )
+                    as available_qty
+                '),
             ])
             ->groupBy('stock_movements.item_id', 'stock_movements.branch_id', 'products.name', 'products.unit', 'products.selling_price', 'categories.name')
             ->having('available_qty', '>', 0)
