@@ -1960,30 +1960,36 @@ class ManufacturingUserDashboard extends Component
             return 0;
         }
 
-        // Get stock movements as SINGLE SOURCE OF TRUTH (identical to ProductTransfer::getSourceBalance)
-        $locationIds = Location::whereIn('branch_id', $userBranchIds)->pluck('id');
-        if ($locationIds->isEmpty()) {
+        $locations = \App\Models\Location::whereIn('branch_id', $userBranchIds)->pluck('id');
+        if ($locations->isEmpty()) {
             return 0;
         }
 
-        $stockIn = (float) \App\Models\StockMovement::whereIn('location_id', $locationIds)
-            ->where('item_type', 'product')
-            ->where('item_id', $product->id)
-            ->where('direction', 'in')
-            ->whereNotIn('movement_type', \App\Models\StockMovement::AVAILABLE_QTY_EXCLUDED_INBOUND)
-            ->sum('quantity');
+        $bestBalance = 0.0;
 
-        $stockOut = (float) \App\Models\StockMovement::whereIn('location_id', $locationIds)
-            ->where('item_type', 'product')
-            ->where('item_id', $product->id)
-            ->where('direction', 'out')
-            ->whereIn('movement_type', \App\Models\StockMovement::AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND)
-            ->sum('quantity');
+        foreach ($locations as $locationId) {
+            $stockIn = (float) \App\Models\StockMovement::where('location_id', $locationId)
+                ->where('item_type', 'product')
+                ->where('item_id', $product->id)
+                ->where('direction', 'in')
+                ->whereNotIn('movement_type', \App\Models\StockMovement::AVAILABLE_QTY_EXCLUDED_INBOUND)
+                ->sum('quantity');
 
-        $movementBalance = max(0, (float)$stockIn - (float)$stockOut);
+            $stockOut = (float) \App\Models\StockMovement::where('location_id', $locationId)
+                ->where('item_type', 'product')
+                ->where('item_id', $product->id)
+                ->where('direction', 'out')
+                ->whereIn('movement_type', \App\Models\StockMovement::AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND)
+                ->sum('quantity');
 
-        // If no StockMovement records, check for legacy metadata (exactly like ProductTransfer does)
-        if ($movementBalance == 0) {
+            $balance = max(0, $stockIn - $stockOut);
+            if ($balance > $bestBalance) {
+                $bestBalance = $balance;
+            }
+        }
+
+        // Legacy fallback: if no StockMovement records, check metadata
+        if ($bestBalance == 0) {
             $prod = \App\Models\Product::withoutGlobalScopes()->find($product->id);
             if ($prod) {
                 $metadata = $prod->metadata ?? [];
@@ -1992,7 +1998,7 @@ class ManufacturingUserDashboard extends Component
             }
         }
 
-        return max(0, $movementBalance);
+        return max(0, $bestBalance);
     }
 
     // Get products for selected sell category — stock-aware, per type
