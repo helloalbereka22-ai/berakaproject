@@ -1,0 +1,20 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "category": "Access Control",
+      "title": "Potential cross-business leak in newMfrMap query",
+      "description": "The date-filtered new_mfr_quantity is calculated without business scope filtering; confirm whether manufacturing staff can accidentally see production from other businesses via this field.",
+      "location": "getGmManufacturingReport() lines 585–595"
+    },
+    {
+      "severity": "MEDIUM",
+      "category": "Query Design",
+      "title": "No business filter in newMfrMap query",
+      "description": "The newMfrMap query does not include a business_id WHERE clause, while the main productionOutputs query does. The risk is mitigated by keying (product_id + branch_id only includes values from the business-restricted main query), but this is implicit coupling rather than explicit filtering. Future changes could expose a vulnerability.",
+      "location": "getGmManufacturingReport() lines 585–595"
+    }
+  ],
+  "reviewDoc": "c:\\xammpp82\\htdocs\\albarekaaaaaa\\.agents\\tasks\\mfg-report-sm-review.md"
+}
