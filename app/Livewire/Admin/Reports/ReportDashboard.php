@@ -704,14 +704,33 @@ class ReportDashboard extends Component
                 ]];
             });
 
-        // Calculate available quantities per product per branch (in - out for all movement types)
+        // Calculate available quantities per product per branch (production_output in - AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND out)
         $availableMap = DB::table('stock_movements')
             ->where('item_type', 'product')
             ->whereIn('stock_movements.item_id', $productionOutputs->pluck('product_id')->unique()->toArray())
             ->select([
                 'item_id as product_id',
                 'branch_id',
-                DB::raw('SUM(CASE WHEN direction = "in" THEN quantity ELSE -quantity END) as available_qty'),
+                DB::raw('
+                    (
+                        SELECT COALESCE(SUM(quantity), 0) FROM stock_movements sm_in
+                        WHERE sm_in.item_id = stock_movements.item_id
+                          AND sm_in.branch_id = stock_movements.branch_id
+                          AND sm_in.item_type = "product"
+                          AND sm_in.direction = "in"
+                          AND sm_in.movement_type NOT IN ("' . implode('", "', \App\Models\StockMovement::AVAILABLE_QTY_EXCLUDED_INBOUND) . '")
+                    )
+                    -
+                    (
+                        SELECT COALESCE(SUM(quantity), 0) FROM stock_movements sm_out
+                        WHERE sm_out.item_id = stock_movements.item_id
+                          AND sm_out.branch_id = stock_movements.branch_id
+                          AND sm_out.item_type = "product"
+                          AND sm_out.direction = "out"
+                          AND sm_out.movement_type IN ("' . implode('", "', \App\Models\StockMovement::AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND) . '")
+                    )
+                    as available_qty
+                '),
             ])
             ->groupBy('item_id', 'branch_id')
             ->get()

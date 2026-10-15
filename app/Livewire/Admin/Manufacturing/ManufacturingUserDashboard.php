@@ -2056,18 +2056,9 @@ class ManufacturingUserDashboard extends Component
 
         return $query->get()
             ->map(function ($product) use ($userBranchIds) {
-                $meta = $product->metadata ?? [];
-                $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-                
-                $totalQty = 0;
-                foreach ($userBranchIds as $branchId) {
-                    $branchIdInt = (int)$branchId;
-                    if (isset($manufacturingByBranch[$branchIdInt])) {
-                        $totalQty += (float)$manufacturingByBranch[$branchIdInt];
-                    }
-                }
-                
-                $product->available_qty = max(0, $totalQty);
+                // Use the correct calculation from stock_movements (not metadata)
+                $availableQty = $this->calculateBranchAvailableQty($product, $userBranchIds);
+                $product->available_qty = max(0, $availableQty);
                 return $product;
             })
             ->filter(fn($p) => $p->available_qty > 0)
@@ -2149,19 +2140,8 @@ class ManufacturingUserDashboard extends Component
             return max(0, (float)$transferredQty);
         }
 
-        // For manufactured products: get from manufacturing_by_branch metadata
-        $meta = $product->metadata ?? [];
-        $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
-        
-        $totalQty = 0;
-        foreach ($userBranchIds as $branchId) {
-            $branchIdInt = (int)$branchId;
-            if (isset($manufacturingByBranch[$branchIdInt])) {
-                $totalQty += (float)$manufacturingByBranch[$branchIdInt];
-            }
-        }
-        
-        return max(0, $totalQty);
+        // For manufactured products: use stock_movements calculation (not metadata)
+        return $this->calculateBranchAvailableQty($product, $userBranchIds);
     }
 
     // Add item to sales list
