@@ -205,34 +205,68 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
                             ->pluck('id');
 
                         if ($locationIds->isNotEmpty()) {
-                            $stockIn = (float) \App\Models\StockMovement::whereIn('location_id', $locationIds)
-                                ->where('item_type', 'product')
-                                ->where('item_id', $product->id)
-                                ->where('direction', 'in')
-                                ->whereNotIn('movement_type', \App\Models\StockMovement::AVAILABLE_QTY_EXCLUDED_INBOUND)
-                                ->sum('quantity');
+                            // Get balance for each location and pick the best one
+                            $locationBalances = [];
+                            foreach ($locationIds as $locId) {
+                                $stockIn = (float) \App\Models\StockMovement::where('location_id', $locId)
+                                    ->where('item_type', 'product')
+                                    ->where('item_id', $product->id)
+                                    ->where('direction', 'in')
+                                    ->whereNotIn('movement_type', \App\Models\StockMovement::AVAILABLE_QTY_EXCLUDED_INBOUND)
+                                    ->sum('quantity');
 
-                            $stockOut = (float) \App\Models\StockMovement::whereIn('location_id', $locationIds)
-                                ->where('item_type', 'product')
-                                ->where('item_id', $product->id)
-                                ->where('direction', 'out')
-                                ->whereIn('movement_type', \App\Models\StockMovement::AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND)
-                                ->sum('quantity');
+                                $stockOut = (float) \App\Models\StockMovement::where('location_id', $locId)
+                                    ->where('item_type', 'product')
+                                    ->where('item_id', $product->id)
+                                    ->where('direction', 'out')
+                                    ->whereIn('movement_type', \App\Models\StockMovement::AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND)
+                                    ->sum('quantity');
 
-                            $available = max(0, (float)$stockIn - (float)$stockOut);
+                                $balance = max(0, (float)$stockIn - (float)$stockOut);
+                                if ($balance > 0) {
+                                    $locationBalances[$locId] = $balance;
+                                }
+                            }
+                            
+                            // Pick location with best balance (highest stock)
+                            $available = !empty($locationBalances) ? max($locationBalances) : 0;
                         }
                     }
 
                     $inBranch = $available > 0;
 
                 } else {
-                    // Purchased items: ONLY from this specific branch
-                    $available = (float)\Illuminate\Support\Facades\DB::table('purchases')
-                        ->where('product_id', $product->id)
+                    // Purchased/transferred items: use stock_movements balance per location
+                    // (same calculation as SellerSales::stockProducts)
+                    $locationIds = \Illuminate\Support\Facades\DB::table('locations')
                         ->where('branch_id', $branchId)
-                        ->where('status', 'completed')
-                        ->where('quantity', '>', 0)
-                        ->sum('quantity');
+                        ->pluck('id');
+
+                    if ($locationIds->isNotEmpty()) {
+                        $locationBalances = [];
+                        foreach ($locationIds as $locId) {
+                            $stockIn = (float) \App\Models\StockMovement::where('location_id', $locId)
+                                ->where('item_type', 'product')
+                                ->where('item_id', $product->id)
+                                ->where('direction', 'in')
+                                ->whereNotIn('movement_type', \App\Models\StockMovement::AVAILABLE_QTY_EXCLUDED_INBOUND)
+                                ->sum('quantity');
+
+                            $stockOut = (float) \App\Models\StockMovement::where('location_id', $locId)
+                                ->where('item_type', 'product')
+                                ->where('item_id', $product->id)
+                                ->where('direction', 'out')
+                                ->whereIn('movement_type', \App\Models\StockMovement::AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND)
+                                ->sum('quantity');
+
+                            $balance = max(0, $stockIn - $stockOut);
+                            if ($balance > 0) {
+                                $locationBalances[$locId] = $balance;
+                            }
+                        }
+                        // Pick location with highest balance (matches SellerSales::stockProducts)
+                        $available = !empty($locationBalances) ? max($locationBalances) : 0;
+                    }
 
                     $inBranch = $available > 0;
                 }
@@ -365,6 +399,27 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
                                     'total_price' => $newQty * (float)$purchase->unit_price,
                                     'updated_at'  => now(),
                                 ]);
+                            
+                            // Record stock_movements entry so seller's available qty reflects the deduction
+                            $locationIds = \Illuminate\Support\Facades\DB::table('locations')
+                                ->where('branch_id', $branchId)
+                                ->pluck('id');
+                            
+                            if ($locationIds->isNotEmpty()) {
+                                $locId = $locationIds->first();
+                                \Illuminate\Support\Facades\DB::table('stock_movements')->insert([
+                                    'item_type'      => 'product',
+                                    'item_id'        => $product->id,
+                                    'location_id'    => $locId,
+                                    'direction'      => 'out',
+                                    'movement_type'  => 'sale',
+                                    'quantity'       => $deductQty,
+                                    'reference_type' => 'GuestOrder',
+                                    'reference_id'   => $order->id,
+                                    'created_by'     => auth()->id() ?? 0,
+                                    'moved_at'       => now(),
+                                ]);
+                            }
                         } elseif ($isOilFactory) {
                             // Oil factory: deduct from metadata
                             $meta      = $product->metadata ?? [];
@@ -373,6 +428,27 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
                             $meta['manufacturing_quantity'] = max(0, $mfgQty - $deductQty);
                             $product->metadata = $meta;
                             $product->save();
+                            
+                            // Record stock_movements entry
+                            $locationIds = \Illuminate\Support\Facades\DB::table('locations')
+                                ->where('branch_id', $branchId)
+                                ->pluck('id');
+                            
+                            if ($locationIds->isNotEmpty()) {
+                                $locId = $locationIds->first();
+                                \Illuminate\Support\Facades\DB::table('stock_movements')->insert([
+                                    'item_type'      => 'product',
+                                    'item_id'        => $product->id,
+                                    'location_id'    => $locId,
+                                    'direction'      => 'out',
+                                    'movement_type'  => 'sale',
+                                    'quantity'       => $deductQty,
+                                    'reference_type' => 'GuestOrder',
+                                    'reference_id'   => $order->id,
+                                    'created_by'     => auth()->id() ?? 0,
+                                    'moved_at'       => now(),
+                                ]);
+                            }
                         } else {
                             $warnings[] = "{$name}: not available at this branch.";
                             continue;
@@ -405,6 +481,27 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
                                     'total_price' => $newQty * (float)$purchase->unit_price,
                                     'updated_at'  => now(),
                                 ]);
+                            
+                            // Record stock_movements entry so seller's available qty reflects the deduction
+                            $locationIds = \Illuminate\Support\Facades\DB::table('locations')
+                                ->where('branch_id', $branchId)
+                                ->pluck('id');
+                            
+                            if ($locationIds->isNotEmpty()) {
+                                $locId = $locationIds->first();
+                                \Illuminate\Support\Facades\DB::table('stock_movements')->insert([
+                                    'item_type'      => 'product',
+                                    'item_id'        => $product->id,
+                                    'location_id'    => $locId,
+                                    'direction'      => 'out',
+                                    'movement_type'  => 'sale',
+                                    'quantity'       => $deductQty,
+                                    'reference_type' => 'GuestOrder',
+                                    'reference_id'   => $order->id,
+                                    'created_by'     => auth()->id() ?? 0,
+                                    'moved_at'       => now(),
+                                ]);
+                            }
                             $deducted++;
                         } else {
                             if ($isPartial) {
