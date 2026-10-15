@@ -23,6 +23,8 @@ class InventoryIndex extends Component
     public string $locationId   = '';
     public string $stockFilter  = ''; // low_stock | out_of_stock
     public string $tab          = 'levels'; // levels | movements | transfers | adjustments
+    public string $dateFrom     = '';
+    public string $dateTo       = '';
 
     // ── Adjustment modal ─────────────────────────────────────────────────
     public bool   $showAdjustModal  = false;
@@ -55,10 +57,16 @@ class InventoryIndex extends Component
         
         // Set tab based on current route
         $route = request()->route()->getName();
+        $today = now()->toDateString(); // Returns Y-m-d format
+        
         if ($route === 'inventory.transfers') {
             $this->tab = 'transfers';
+            $this->dateFrom = $today;
+            $this->dateTo = $today;
         } elseif ($route === 'inventory.movements') {
             $this->tab = 'movements';
+            $this->dateFrom = $today;
+            $this->dateTo = $today;
         } elseif ($route === 'inventory.adjustments') {
             $this->tab = 'adjustments';
         } else {
@@ -75,6 +83,8 @@ class InventoryIndex extends Component
 
     public function updatedSearch(): void    { $this->resetPage(); }
     public function updatedStockFilter(): void { $this->resetPage(); }
+    public function updatedDateFrom(): void { $this->resetPage(); }
+    public function updatedDateTo(): void { $this->resetPage(); }
 
     private function loadLocations(): void
     {
@@ -239,6 +249,8 @@ class InventoryIndex extends Component
                     StockMovement::TYPE_TRANSFER_OUT
                 ]);
             })
+            ->when($this->dateFrom, fn($q) => $q->whereDate('moved_at', '>=', $this->dateFrom))
+            ->when($this->dateTo, fn($q) => $q->whereDate('moved_at', '<=', $this->dateTo))
             ->orderByDesc('moved_at')
             ->paginate(25);
     }

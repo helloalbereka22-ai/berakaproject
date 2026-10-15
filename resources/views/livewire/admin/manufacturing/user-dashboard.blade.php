@@ -633,7 +633,18 @@
                         @forelse($this->manufacturediItems as $item)
                         @php
                             $meta           = $item->metadata ?? [];
-                            $mfgQty         = isset($meta['manufacturing_quantity']) ? $meta['manufacturing_quantity'] : 0;
+                            
+                            // Get ACTUAL available quantity from stock_movements (in - out)
+                            // This matches the report's availableMap calculation
+                            $userBranchIds = auth()->user()->assignedBranchIds();
+                            $availableData = \DB::table('stock_movements')
+                                ->where('item_type', 'product')
+                                ->where('item_id', $item->id)
+                                ->whereIn('branch_id', $userBranchIds)
+                                ->select(\DB::raw('SUM(CASE WHEN direction = "in" THEN quantity ELSE -quantity END) as available_qty'))
+                                ->first();
+                            
+                            $mfgQty = $availableData && $availableData->available_qty ? max(0, (float)$availableData->available_qty) : 0;
                             $mfgQtyFormatted= rtrim(rtrim(number_format($mfgQty, 3, '.', ''), '0'), '.');
                             $mfgDate        = isset($meta['manufacturing_added_at'])
                                 ? \Carbon\Carbon::parse($meta['manufacturing_added_at'])->format('Y-m-d H:i')

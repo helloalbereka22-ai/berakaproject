@@ -551,8 +551,9 @@ class ReportDashboard extends Component
             }
         }
 
-        // Query: Get all production_output movements per product per branch
-        // These represent manufactured quantities
+        // Query: Get all production_output movements per product per branch (ALL TIME)
+        // These provide the base list of products that have been manufactured
+        // The NEW MFR quantity will be filtered by date separately in $newMfrMap
         $productionOutputs = DB::table('stock_movements')
             ->join('products', function ($join) {
                 $join->on('stock_movements.item_id', '=', 'products.id')
@@ -560,7 +561,7 @@ class ReportDashboard extends Component
             })
             ->join('categories', 'products.category_id', '=', 'categories.id')
             ->join('branches', 'stock_movements.branch_id', '=', 'branches.id')
-            ->join('business', 'branches.business_id', '=', 'business.id')
+            ->join('businesses', 'branches.business_id', '=', 'businesses.id')
             ->where('stock_movements.movement_type', 'production_output')
             ->where('stock_movements.direction', 'in')
             ->whereIn('products.type', ['finished_product', 'bottle_product'])
@@ -576,7 +577,7 @@ class ReportDashboard extends Component
                 'products.selling_price',
                 'categories.name as category_name',
                 'branches.name as branch_name',
-                'business.name as business_name',
+                'businesses.name as business_name',
                 'stock_movements.created_by',
                 DB::raw('SUM(stock_movements.quantity) as mfg_qty'),
                 DB::raw('MAX(stock_movements.moved_at) as last_mfg_at'),
@@ -589,44 +590,119 @@ class ReportDashboard extends Component
                 'products.selling_price',
                 'categories.name',
                 'branches.name',
-                'business.name',
+                'businesses.name',
                 'stock_movements.created_by'
             )
             ->get();
 
-        // For each product+branch, calculate new_mfr_quantity (within date filter)
-        $newMfrMap = DB::table('stock_movements')
-            ->where('movement_type', 'production_output')
-            ->where('direction', 'in')
-            ->where('item_type', 'product')
-            ->whereIn('stock_movements.item_id', $productionOutputs->pluck('product_id')->unique()->toArray())
-            ->when($dateFrom, fn($q) => $q->where('moved_at', '>=', $dateFrom))
-            ->when($dateTo, fn($q) => $q->where('moved_at', '<=', $dateTo))
-            ->select([
-                'item_id as product_id',
-                'branch_id',
-                DB::raw('SUM(quantity) as new_qty'),
-            ])
-            ->groupBy('item_id', 'branch_id')
-            ->get()
-            ->keyBy(fn($r) => $r->product_id . '_' . $r->branch_id);
+        // For each product+branch, calculate new_mfr_quantity (today's manufacturing)
+        // Use last_mfr_quantity from metadata to match Bilal's view (shows last entered qty, not accumulated)
+        // BUT only include products where manufacturing_added_at is TODAY
+        $today = now()->toDateString();
+        $productMetadata = Product::withoutGlobalScopes()
+            ->whereIn('business_id', $businessIds)
+            ->get();
+        
+        $newMfrMap = collect();
+        foreach ($productMetadata as $product) {
+            $meta = $product->metadata ?? [];
+            
+            // MUST have manufacturing_added_at set to TODAY
+            if (!isset($meta['manufacturing_added_at'])) {
+                continue;
+            }
+            
+            try {
+                $addedDate = Carbon::parse($meta['manufacturing_added_at'])->toDateString();
+                if ($addedDate !== $today) {
+                    continue;  // Not today's manufacturing, skip
+                }
+            } catch (\Exception $e) {
+                continue;
+            }
+            
+            // Get the manufactured_by_branch_id to match Bilal's view's branch ownership
+            $manufacturingByBranchId = (int) ($meta['manufactured_by_branch_id'] ?? 0);
+            
+            if (!$manufacturingByBranchId) {
+                continue; // Skip if no branch owner set
+            }
+            
+            // Use last_mfr_quantity (the ACTUAL daily entry value shown in "New Mfr" column in Bilal's view)
+            $lastMfrQty = (float)($meta['last_mfr_quantity'] ?? 0);
+            
+            if ($lastMfrQty > 0) {
+                $key = $product->id . '_' . $manufacturingByBranchId;
+                $newMfrMap[$key] = (object)['new_qty' => $lastMfrQty];
+            }
+        }
 
-        // For each product, get production_consumption movements to calculate seed usage
-        // Date-filtered to match the report's date range
-        $seedMap = DB::table('stock_movements')
-            ->where('movement_type', 'production_consumption')
-            ->where('item_type', 'product')
-            ->where('direction', 'out')
-            ->whereIn('stock_movements.item_id', $productionOutputs->pluck('product_id')->unique()->toArray())
-            ->when($dateFrom, fn($q) => $q->where('moved_at', '>=', $dateFrom))
-            ->when($dateTo, fn($q) => $q->where('moved_at', '<=', $dateTo))
-            ->select([
-                'item_id as product_id',
-                DB::raw('SUM(quantity) as total_seed_consumed'),
-            ])
-            ->groupBy('item_id')
+        // For each product, get raw material consumption (seed) from available sources
+        // Use the SAME source as Bilal's dashboard for consistency
+        $seedMap = \App\Models\Product::withoutGlobalScopes()
+            ->whereIn('business_id', $businessIds)
+            ->where('status', 'active')
             ->get()
-            ->keyBy('product_id');
+            ->mapWithKeys(function ($product) {
+                $meta = $product->metadata ?? [];
+                
+                $seedName = '—';
+                $seedUnit = 'kg';
+                $totalSeedUsed = 0;
+                $todaySeedUsed = 0;
+                
+                // Bilal's dashboard uses: $meta['seed_by_branch'][$branch_id]
+                // For reports, sum ALL branches to get total
+                if (isset($meta['seed_by_branch']) && is_array($meta['seed_by_branch'])) {
+                    // Sum all branches for this product
+                    foreach ($meta['seed_by_branch'] as $branchQty) {
+                        if (is_numeric($branchQty)) {
+                            $totalSeedUsed += (float)$branchQty;
+                        }
+                    }
+                    
+                    // Get seed name and unit from metadata
+                    $seedName = $meta['seed_name'] ?? '—';
+                    $seedUnit = $meta['seed_unit'] ?? 'kg';
+                    $todaySeedUsed = (float)($meta['current_seed_deduction'] ?? 0);
+                    
+                    if ($totalSeedUsed > 0) {
+                        return [$product->id => (object)[
+                            'product_id' => $product->id,
+                            'seed_name' => $seedName,
+                            'seed_unit' => $seedUnit,
+                            'total_seed_consumed' => $totalSeedUsed,
+                            'today_seed_consumed' => $todaySeedUsed,
+                        ]];
+                    }
+                }
+                
+                // Fallback: Check metadata['seed_quantity_used'] if seed_by_branch doesn't exist
+                if (isset($meta['seed_quantity_used']) && (float)$meta['seed_quantity_used'] > 0) {
+                    $totalSeedUsed = (float)$meta['seed_quantity_used'];
+                    $seedName = $meta['seed_name'] ?? '—';
+                    $seedUnit = $meta['seed_unit'] ?? 'kg';
+                    $todaySeedUsed = (float)($meta['current_seed_deduction'] ?? 0);
+                    
+                    return [$product->id => (object)[
+                        'product_id' => $product->id,
+                        'seed_name' => $seedName,
+                        'seed_unit' => $seedUnit,
+                        'total_seed_consumed' => $totalSeedUsed,
+                        'today_seed_consumed' => $todaySeedUsed,
+                    ]];
+                }
+                
+                // No seed data found: return empty values
+                $todaySeedUsed = (float)($meta['current_seed_deduction'] ?? 0);
+                return [$product->id => (object)[
+                    'product_id' => $product->id,
+                    'seed_name' => $seedName,
+                    'seed_unit' => $seedUnit,
+                    'total_seed_consumed' => $totalSeedUsed,
+                    'today_seed_consumed' => $todaySeedUsed,
+                ]];
+            });
 
         // Calculate available quantities per product per branch (in - out for all movement types)
         $availableMap = DB::table('stock_movements')
@@ -659,17 +735,88 @@ class ReportDashboard extends Component
             ->unique(fn($r) => $r->product_id . '_' . $r->branch_id)
             ->keyBy(fn($r) => $r->product_id . '_' . $r->branch_id);
 
-        // Map results to report format
-        $rows = $productionOutputs->map(function ($row) use ($newMfrMap, $seedMap, $availableMap, $userMap) {
-            $key = $row->product_id . '_' . $row->branch_id;
-            $newMfr = $newMfrMap->get($key);
-            $seedData = $seedMap->get($row->product_id);
+        // Calculate seed consumed TODAY from stock_movements (production_consumption movements)
+        // This sums raw material deductions WITHIN the date range
+        $seedConsumedTodayMap = DB::table('stock_movements')
+            ->where('movement_type', 'production_consumption')
+            ->where('direction', 'out')
+            ->where('item_type', 'product')
+            ->whereIn('stock_movements.item_id', $productionOutputs->pluck('product_id')->unique()->toArray())
+            ->when($dateFrom, fn($q) => $q->where('moved_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->where('moved_at', '<=', $dateTo))
+            ->select([
+                'item_id as product_id',
+                'branch_id',
+                DB::raw('SUM(quantity) as seed_consumed'),
+            ])
+            ->groupBy('item_id', 'branch_id')
+            ->get()
+            ->keyBy(fn($r) => $r->product_id . '_' . $r->branch_id);
+
+        // Calculate seed consumed from stock_movements (production_consumption movements)
+        // This sums ALL raw material deductions for the current available batch (no date filter)
+        $seedConsumedMap = DB::table('stock_movements')
+            ->where('movement_type', 'production_consumption')
+            ->where('direction', 'out')
+            ->where('item_type', 'product')
+            ->whereIn('stock_movements.item_id', $productionOutputs->pluck('product_id')->unique()->toArray())
+            ->select([
+                'item_id as product_id',
+                'branch_id',
+                DB::raw('SUM(quantity) as seed_consumed'),
+            ])
+            ->groupBy('item_id', 'branch_id')
+            ->get()
+            ->keyBy(fn($r) => $r->product_id . '_' . $r->branch_id);
+
+        // Map results to report format - ONLY show TODAY's manufactured products
+        // Iterate over $newMfrMap (today's manufacturing) not $productionOutputs (all-time)
+        $rows = $newMfrMap->map(function ($newMfrData, $compositeKey) use ($productionOutputs, $seedMap, $availableMap, $userMap, $seedConsumedMap, $seedConsumedTodayMap) {
+            // Parse composite key: product_id_branch_id
+            $parts = explode('_', $compositeKey);
+            $productId = (int)$parts[0];
+            $branchId = (int)$parts[1];
+            $key = $productId . '_' . $branchId;
+            
+            // Find matching product from all-time data (for product info like name, category)
+            $row = $productionOutputs->first(fn($r) => $r->product_id == $productId && $r->branch_id == $branchId);
+            if (!$row) {
+                return null;
+            }
+            
+            // Get data from the maps
+            $seedData = $seedMap->get($productId);
             $availData = $availableMap->get($key);
             $userData = $userMap->get($key);
+            $seedConsumed = $seedConsumedMap->get($key);
+            $seedConsumedToday = $seedConsumedTodayMap->get($key);
 
-            $newMfrQty = $newMfr ? (float) $newMfr->new_qty : 0;
-            $usedSeedQty = $seedData ? (float) $seedData->total_seed_consumed : 0;
-            $usedSeedQty = abs($usedSeedQty); // production_consumption is stored as negative
+            // New Mfr Qty = TODAY's value from $newMfrMap (manufacturing_daily_qty_by_branch)
+            $newMfrQty = (float) $newMfrData->new_qty;
+            $seedName = $seedData ? $seedData->seed_name : '—';
+            $seedUnit = $seedData ? $seedData->seed_unit : 'kg';
+            
+            // Use available quantity (in - out) instead of all-time manufactured quantity
+            $availableQty = $availData ? max(0, (float) $availData->available_qty) : 0;
+            
+            // Used Qty = Today's seed consumption from metadata
+            // Note: production_consumption movements don't exist in this system
+            // Seed tracking is maintained in product metadata only
+            $usedQtyToday = 0;
+            $seedMetadata = $seedMap->get($row->product_id);
+            if ($seedMetadata) {
+                $usedQtyToday = (float) $seedMetadata->today_seed_consumed;
+            }
+            
+            // Total Seed Used = All-time seed consumed from metadata
+            // Fallback: if no consumption records, use metadata as single source of truth
+            $seedForAvailable = 0;
+            if ($seedMetadata) {
+                $seedForAvailable = (float) $seedMetadata->total_seed_consumed;
+            } elseif ($seedConsumed) {
+                // Fallback to actual stock_movements if metadata is missing
+                $seedForAvailable = (float) $seedConsumed->seed_consumed;
+            }
 
             return [
                 'product_id'               => (int) $row->product_id,
@@ -680,17 +827,19 @@ class ReportDashboard extends Component
                 'manufactured_by_username' => $userData ? $userData->username : '—',
                 'manufactured_by_branch'   => $row->branch_name,
                 'new_mfr_quantity'         => $newMfrQty,
-                'mfg_qty'                  => (float) $row->mfg_qty,
-                'used_seed_qty'            => $usedSeedQty,
+                'mfg_qty'                  => $availableQty,
+                'used_seed_qty'            => $usedQtyToday,
                 'unit'                     => $row->unit ?? 'pcs',
                 'selling_price'            => (float) $row->selling_price,
-                'total_value'              => round((float) $row->mfg_qty * (float) $row->selling_price, 2),
-                'seed_name'                => '—',
-                'seed_qty_used'            => 0,
-                'seed_unit'                => 'kg',
+                'total_value'              => round($availableQty * (float) $row->selling_price, 2),
+                'seed_name'                => $seedName,
+                'seed_qty_used'            => $seedForAvailable,
+                'seed_unit'                => $seedUnit,
                 'last_mfg_at'              => $row->last_mfg_at ? Carbon::parse($row->last_mfg_at)->format('Y-m-d H:i:s') : '—',
             ];
-        })->sortByDesc('last_mfg_at');
+        })
+        ->filter(fn($item) => $item !== null)  // Remove any null entries
+        ->sortByDesc('last_mfg_at');
 
         return $rows->values();
     }
@@ -703,8 +852,26 @@ class ReportDashboard extends Component
         $assignedBranchIds = $user->assignedBranchIds();
         $assignedBusinessIds = $user->assignedBusinessIds();
 
+        // Parse date filters
+        $dateFrom = null;
+        $dateTo = null;
+        if (!empty($filters['date_from'])) {
+            try {
+                $dateFrom = Carbon::createFromFormat('Y-m-d', $filters['date_from'])->startOfDay();
+            } catch (\Exception $e) {
+                $dateFrom = Carbon::parse($filters['date_from'])->startOfDay();
+            }
+        }
+        if (!empty($filters['date_to'])) {
+            try {
+                $dateTo = Carbon::createFromFormat('Y-m-d', $filters['date_to'])->endOfDay();
+            } catch (\Exception $e) {
+                $dateTo = Carbon::parse($filters['date_to'])->endOfDay();
+            }
+        }
+
         // Query: Get available qty per product per branch from stock_movements
-        // Available = SUM(in) - SUM(out) for all movement types
+        // Available = SUM(in) - SUM(out) for movements within the date range
         // Group by branch_id to show separate rows per branch
         $availableQtys = DB::table('stock_movements')
             ->join('products', function ($join) {
@@ -716,6 +883,8 @@ class ReportDashboard extends Component
             ->whereIn('products.type', ['finished_product', 'bottle_product'])
             ->whereIn('stock_movements.branch_id', $assignedBranchIds)
             ->whereIn('products.business_id', $assignedBusinessIds)
+            ->when($dateFrom, fn($q) => $q->where('stock_movements.moved_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->where('stock_movements.moved_at', '<=', $dateTo))
             ->select([
                 'stock_movements.item_id as product_id',
                 'stock_movements.branch_id',

@@ -2,8 +2,17 @@
 
     {{-- Image --}}
     <a href="{{ route('store.product', $product->id) }}" class="block relative overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100 aspect-square">
-        @if($product->primaryImage)
-            <img src="{{ asset('storage/' . $product->primaryImage['path']) }}"
+        @php
+            $imagePath = null;
+            if ($product->primaryImage) {
+                // Handle both array and object access
+                $imagePath = is_array($product->primaryImage) 
+                    ? ($product->primaryImage['path'] ?? null)
+                    : ($product->primaryImage->path ?? null);
+            }
+        @endphp
+        @if($imagePath)
+            <img src="{{ asset('storage/' . $imagePath) }}"
                  alt="{{ $product->name }}"
                  class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                  loading="lazy">

@@ -152,9 +152,13 @@ class SellerSales extends Component
                 'categories.name as category_name',
                 // Best location = highest balance
                 DB::raw('stock_movements.location_id'),
-                DB::raw("SUM(CASE WHEN stock_movements.direction='in'
+                DB::raw("SUM(CASE WHEN stock_movements.direction='in' 
+                                  AND stock_movements.movement_type NOT IN ('" . implode("','", StockMovement::AVAILABLE_QTY_EXCLUDED_INBOUND) . "')
                               THEN stock_movements.quantity
-                              ELSE -stock_movements.quantity
+                              WHEN stock_movements.direction='out'
+                                  AND stock_movements.movement_type IN ('" . implode("','", StockMovement::AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND) . "')
+                              THEN -stock_movements.quantity
+                              ELSE 0
                           END) as qty_on_hand")
             )
             ->groupBy(

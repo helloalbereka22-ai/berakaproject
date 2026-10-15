@@ -18,7 +18,7 @@
         <div class="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm">{{ session('error') }}</div>
     @endif
 
-    {{-- KPI Cards (Low Stock and Out of Stock hidden) --}}
+    {{-- KPI Cards with Date Filters --}}
     @if($tab !== 'transfers')
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
@@ -30,6 +30,32 @@
             <p class="text-3xl font-bold text-white mt-2">{{ number_format($summary['total_value'], 2) }}</p>
         </div>
     </div>
+    
+    {{-- Date Filters (Movements/Transfers Tab Only) --}}
+    @if($tab === 'movements' || $tab === 'transfers')
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">From</label>
+            <input wire:model.live.debounce.300ms="dateFrom" type="date" 
+                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 cursor-pointer"
+                style="color-scheme: dark;">
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">To</label>
+            <input wire:model.live.debounce.300ms="dateTo" type="date" 
+                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 cursor-pointer"
+                style="color-scheme: dark;">
+        </div>
+        @if($dateFrom || $dateTo)
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex items-end">
+            <button wire:click="$set('dateFrom', ''); $set('dateTo', '')"
+                class="w-full px-4 py-2 rounded-xl text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                Clear Dates
+            </button>
+        </div>
+        @endif
+    </div>
+    @endif
     @else
         {{-- Empty div for spacing on transfers tab --}}
     @endif
@@ -162,7 +188,7 @@
     @endif
 
     {{-- Movements Tab --}}
-    @if($tab === 'movements')
+    @if($tab === 'movements' || $tab === 'transfers')
     <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full text-sm">

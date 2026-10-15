@@ -18,8 +18,17 @@
         {{-- Image --}}
         <div class="space-y-3">
             <div class="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl overflow-hidden flex items-center justify-center relative">
-                @if($product->primaryImage)
-                    <img src="{{ asset('storage/' . $product->primaryImage['path']) }}"
+                @php
+                    $imagePath = null;
+                    if ($product->primaryImage) {
+                        // Handle both array and object access
+                        $imagePath = is_array($product->primaryImage) 
+                            ? ($product->primaryImage['path'] ?? null)
+                            : ($product->primaryImage->path ?? null);
+                    }
+                @endphp
+                @if($imagePath)
+                    <img src="{{ asset('storage/' . $imagePath) }}"
                          alt="{{ $product->name }}"
                          class="w-full h-full object-cover">
                 @else
@@ -140,8 +149,16 @@
             <a href="{{ route('store.product', $rel->id) }}"
                class="bg-white border border-gray-200 rounded-2xl overflow-hidden hover:shadow-md hover:border-purple-300 transition group">
                 <div class="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center overflow-hidden">
-                    @if($rel->primaryImage)
-                        <img src="{{ asset('storage/' . $rel->primaryImage['path']) }}"
+                    @php
+                        $relImagePath = null;
+                        if ($rel->primaryImage) {
+                            $relImagePath = is_array($rel->primaryImage) 
+                                ? ($rel->primaryImage['path'] ?? null)
+                                : ($rel->primaryImage->path ?? null);
+                        }
+                    @endphp
+                    @if($relImagePath)
+                        <img src="{{ asset('storage/' . $relImagePath) }}"
                              alt="{{ $rel->name }}"
                              class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
                     @else

@@ -121,18 +121,17 @@
             </div>
         </div>
 
-        {{-- Row 1c: Total Manufactured Qty (only for product type) --}}
+        {{-- Row 1c: Available Qty in Store (only for product type) --}}
         @if($type === 'product' && $product_id)
         <div class="grid grid-cols-1 gap-4">
             <div>
                 <label class="block text-[11px] font-semibold text-slate-400 mb-1.5">
-                    Total Manufactured Qty
-                    <span class="text-xs text-slate-500">(Added by Manufacturer)</span>
+                    Available Qty in Store
                 </label>
                 <div class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-mono text-emerald-400 border-emerald-500/30">
                     {{ number_format($this->getManufacturedQuantity(), 3) }} units
                 </div>
-                <p class="text-xs text-slate-500 mt-1">This shows the total quantity manufactured for the selected item.</p>
+                <p class="text-xs text-slate-500 mt-1">This shows the current quantity available in stock for the selected item.</p>
             </div>
         </div>
         @endif

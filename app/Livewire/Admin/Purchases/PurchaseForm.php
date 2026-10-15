@@ -48,18 +48,27 @@ class PurchaseForm extends Component
     // ── Get manufactured quantity for selected product ────────────────────
     public function getManufacturedQuantity(): float
     {
-        if (!$this->product_id || $this->type !== 'product') {
+        if (!$this->product_id || !$this->branch_id) {
             return 0;
         }
 
-        // Get total manufactured quantity from product metadata
-        $product = Product::withoutGlobalScopes()->find($this->product_id);
-        if (!$product) {
-            return 0;
+        // Try to get balance using location-based query first
+        $inventoryService = app(InventoryService::class);
+        $balance = $inventoryService->getBalanceForBranch(
+            (int) $this->branch_id,
+            (int) $this->product_id
+        );
+
+        // If location-based query returns 0, try direct branch_id query as fallback
+        if ($balance <= 0) {
+            $balance = (float) \DB::table('stock_movements')
+                ->where('branch_id', $this->branch_id)
+                ->where('item_id', $this->product_id)
+                ->where('item_type', 'product')
+                ->sum(\DB::raw("CASE WHEN direction = 'in' THEN quantity ELSE -quantity END"));
         }
 
-        $metadata = $product->metadata ?? [];
-        return (float) ($metadata['manufacturing_quantity'] ?? 0);
+        return max(0, $balance);
     }
 
     // ── Transfer Form ─────────────────────────────────────────────────────
@@ -99,9 +108,8 @@ class PurchaseForm extends Component
             ->where('status', FinishedGood::STATUS_AVAILABLE)
             ->get()
             ->sum(fn($fg) => $fg->getRemaining());
-        $currentStock = (float) $p->current_stock;
 
-        return max(0, max($meta, $fgStock, $currentStock));
+        return max(0, max($meta, $fgStock));
     }
 
     public function getTransferCategoriesProperty(): \Illuminate\Database\Eloquent\Collection
@@ -114,22 +122,57 @@ class PurchaseForm extends Component
     public function getTransferProductsProperty(): \Illuminate\Support\Collection
     {
         if (!$this->trCategoryId) return collect();
-        return Product::with('category')
+        
+        // Get product IDs first
+        $products = Product::with('category')
             ->where('category_id', $this->trCategoryId)
             ->where('status', 'active')
             ->orderBy('name')
+            ->get();
+        
+        if ($products->isEmpty()) return collect();
+        
+        $productIds = $products->pluck('id')->toArray();
+        
+        // Batch load finished goods data
+        $finishedGoodsMap = FinishedGood::whereIn('product_id', $productIds)
+            ->where('status', FinishedGood::STATUS_AVAILABLE)
             ->get()
-            ->map(function ($p) {
-                $p->available_qty = $this->getProductAvailableStock($p->id);
-                return $p;
-            })
-            ->values();
+            ->groupBy('product_id')
+            ->mapWithKeys(function ($fgs, $productId) {
+                return [$productId => $fgs->sum(fn($fg) => $fg->getRemaining())];
+            });
+        
+        // Map available qty without calling getProductAvailableStock per product
+        return $products->map(function ($p) use ($finishedGoodsMap) {
+            $meta = (float) ($p->metadata['manufacturing_quantity'] ?? 0);
+            $fgStock = (float) ($finishedGoodsMap[$p->id] ?? 0);
+            $p->available_qty = max(0, max($meta, $fgStock));
+            return $p;
+        })->values();
     }
 
     public function getTransferAvailableQtyProperty(): float
     {
         if (!$this->trProductId) return 0;
-        return $this->getProductAvailableStock($this->trProductId);
+        
+        // Try to get from already-loaded transfer products first
+        $product = collect($this->transferProducts)->firstWhere('id', $this->trProductId);
+        if ($product && isset($product->available_qty)) {
+            return (float) $product->available_qty;
+        }
+        
+        // Fallback: calculate directly
+        $p = Product::withoutGlobalScopes()->find($this->trProductId);
+        if (!$p) return 0;
+
+        $meta = (float) ($p->metadata['manufacturing_quantity'] ?? 0);
+        $fgStock = (float) FinishedGood::where('product_id', $this->trProductId)
+            ->where('status', FinishedGood::STATUS_AVAILABLE)
+            ->get()
+            ->sum(fn($fg) => $fg->getRemaining());
+
+        return max(0, max($meta, $fgStock));
     }
 
     public function getTransferDestinationBusinessesProperty(): \Illuminate\Database\Eloquent\Collection
@@ -542,7 +585,7 @@ class PurchaseForm extends Component
             ->toArray();
     }
 
-    // ── Pre-fill prices when item selected (if not already filled) ────────
+    // ── Pre-fill prices when item selected ────────────────────────────────
     public function updatedProductId(): void
     {
         // Do nothing if no product selected
@@ -562,14 +605,14 @@ class PurchaseForm extends Component
 
         $product = Product::withoutGlobalScopes()->find($this->product_id);
         if ($product) {
-            // Only auto-fill purchase price if it's empty
-            if (!$this->unit_price && $product->cost_price > 0) {
+            // ALWAYS update prices when product changes (not just when empty)
+            if ($product->cost_price > 0) {
                 $this->unit_price = (string) (float) $product->cost_price;
                 $this->baseUnitPrice = (string) (float) $product->cost_price;
             }
             
-            // Only auto-fill selling price if it's empty
-            if (!$this->selling_price && $product->selling_price > 0) {
+            // ALWAYS update selling price when product changes
+            if ($product->selling_price > 0) {
                 $this->selling_price = (string) (float) $product->selling_price;
             }
         }
@@ -687,6 +730,7 @@ class PurchaseForm extends Component
                 }
                 $product->status = 'active';
                 $product->is_marketplace_visible = true;
+                $product->deleted_at = null; // Ensure not soft-deleted
 
                 // Initialize metadata for manufacturing tracking
                 $meta = $product->metadata ?? [];
@@ -706,7 +750,7 @@ class PurchaseForm extends Component
                 $product->metadata = $meta;
                 $product->save();
 
-                session()->flash('success', 'Product recorded. Quantity will be added by manufacturer.');
+                session()->flash('success', 'Product recorded and is now visible on the website. Quantity will be added by manufacturer.');
                 $this->reset(['product_id', 'unit', 'quantity', 'unit_price', 'selling_price']);
                 return;
             }
@@ -748,19 +792,27 @@ class PurchaseForm extends Component
                     );
                 }
 
-                // Always update product prices to latest values
-                $product->cost_price    = $newPrice;
+                // Force update ALL required fields for marketplace visibility
+                $product->fill([
+                    'cost_price' => $newPrice,
+                    'status' => 'active',
+                    'is_marketplace_visible' => true,
+                    'deleted_at' => null,
+                ]);
+                
                 if ($this->selling_price !== '') {
                     $product->selling_price = (float) $this->selling_price;
                 }
-                $product->status = 'active';
-                $product->is_marketplace_visible = true;
 
-                // Save image if uploaded — only update if product has no image yet or new one provided
+                // Ensure product type is saleable
+                if (!in_array($product->type, \App\Models\Product::SALEABLE_PRODUCT_TYPES)) {
+                    $product->type = \App\Models\Product::TYPE_BOOK;
+                }
+
+                // Save image if uploaded
                 if ($this->image) {
                     $imagePath = $this->image->store('products', 'public');
                     $product->image_path = $imagePath;
-                    // Also add to metadata images for modern accessor
                     $meta = $product->metadata ?? [];
                     $meta['images'] = [[
                         'path'       => $imagePath,
@@ -784,7 +836,7 @@ class PurchaseForm extends Component
             $this->sellingPriceError = '';
             $this->products      = [];
             $this->resetPage();
-            session()->flash('success', 'Purchase recorded successfully.');
+            session()->flash('success', 'Purchase recorded successfully and is now visible on the website.');
         } catch (\Exception $e) {
             session()->flash('error', 'Error saving purchase: ' . $e->getMessage());
             \Log::error('Purchase save error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
@@ -1109,7 +1161,30 @@ class PurchaseForm extends Component
         // Group by product_id + branch_id to consolidate duplicates
         $grouped = $allItems->groupBy(function ($item) {
             return $item->product_id . '_' . $item->branch_id;
-        })->map(function ($group) {
+        });
+
+        // Batch load available stock for all products at once
+        $productIds = $grouped->keys()->map(function ($key) {
+            $parts = explode('_', $key);
+            return (int) $parts[0];
+        })->unique()->toArray();
+
+        // Batch load finished goods
+        $finishedGoodsMap = FinishedGood::whereIn('product_id', $productIds)
+            ->where('status', FinishedGood::STATUS_AVAILABLE)
+            ->get()
+            ->groupBy('product_id')
+            ->mapWithKeys(function ($fgs, $productId) {
+                return [$productId => $fgs->sum(fn($fg) => $fg->getRemaining())];
+            });
+
+        // Batch load product metadata
+        $productsMetadata = Product::withoutGlobalScopes()
+            ->whereIn('id', $productIds)
+            ->get(['id', 'metadata'])
+            ->keyBy('id');
+
+        $grouped = $grouped->map(function ($group) use ($finishedGoodsMap, $productsMetadata) {
             // Take the first item (prefer Purchase records over synthetic objects)
             $latestItem = $group->sortBy(fn($i) => isset($i->is_manufactured) ? 1 : 0)->first();
             
@@ -1120,9 +1195,18 @@ class PurchaseForm extends Component
             $latestItem->total_purchase_qty = $totalQty;
             $latestItem->purchase_count = $group->count();
             
-            // Calculate current available qty
+            // Calculate current available qty using pre-loaded data
             if ($latestItem->product_id) {
-                $latestItem->current_available_qty = $this->getProductAvailableStock($latestItem->product_id);
+                $productId = $latestItem->product_id;
+                $product = $productsMetadata[$productId] ?? null;
+                
+                if ($product) {
+                    $meta = (float) ($product->metadata['manufacturing_quantity'] ?? 0);
+                    $fgStock = (float) ($finishedGoodsMap[$productId] ?? 0);
+                    $latestItem->current_available_qty = max(0, max($meta, $fgStock));
+                } else {
+                    $latestItem->current_available_qty = 0;
+                }
             } else {
                 $latestItem->current_available_qty = 0;
             }

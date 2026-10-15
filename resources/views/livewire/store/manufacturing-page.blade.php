@@ -28,8 +28,16 @@
 
                 {{-- Image --}}
                 <a href="{{ route('store.product', $product->id) }}" class="block relative overflow-hidden bg-gradient-to-br from-amber-50 to-orange-50 aspect-square">
-                    @if($product->primaryImage)
-                        <img src="{{ asset('storage/' . $product->primaryImage['path']) }}"
+                    @php
+                        $mfgImagePath = null;
+                        if ($product->primaryImage) {
+                            $mfgImagePath = is_array($product->primaryImage) 
+                                ? ($product->primaryImage['path'] ?? null)
+                                : ($product->primaryImage->path ?? null);
+                        }
+                    @endphp
+                    @if($mfgImagePath)
+                        <img src="{{ asset('storage/' . $mfgImagePath) }}"
                              alt="{{ $product->name }}"
                              class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                              loading="lazy">

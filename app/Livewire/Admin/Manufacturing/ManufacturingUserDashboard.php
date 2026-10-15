@@ -1192,6 +1192,10 @@ class ManufacturingUserDashboard extends Component
                     
                     $meta['seed_name']          = $seed?->name ?? 'Seed';
                     $meta['seed_unit']          = $seed?->unit ?? 'kg';
+                    
+                    // Accumulate total seed used (for report "Total Seed Used" column)
+                    $prevSeedQtyUsed = (float)($meta['seed_quantity_used'] ?? 0);
+                    $meta['seed_quantity_used'] = $prevSeedQtyUsed + (float)$seedQuantity;
                 }
 
                 // Calculate and store total material used quantity
@@ -1379,6 +1383,12 @@ class ManufacturingUserDashboard extends Component
         // Update metadata with new values
         $meta['new_mfr_quantity'] = $newNewMfrQty;
         $meta['current_seed_deduction'] = $newUsedQty;
+        
+        // Accumulate total seed used for "Total Seed Used" column in reports
+        if ($usedQtyDifference != 0) {
+            $prevSeedQtyUsed = (float)($meta['seed_quantity_used'] ?? 0);
+            $meta['seed_quantity_used'] = $prevSeedQtyUsed + $usedQtyDifference;
+        }
         
         // Update manufacturing_by_branch for this branch by adding the difference
         if (!empty($userBranchIds)) {
@@ -2474,24 +2484,25 @@ class ManufacturingUserDashboard extends Component
 
     /**
      * Get the manufactured quantity for the current user's branch(es).
+     * Uses stock_movements to calculate ACTUAL current available stock,
+     * not stale metadata values.
      */
     public function getManufacturedQtyForUser($product): string
     {
         $user = auth()->user();
         $userBranchIds = $user->assignedBranchIds();
         
-        $meta = $product->metadata ?? [];
-        $manufacturingByBranch = $meta['manufacturing_by_branch'] ?? [];
+        // Calculate actual available stock from stock_movements
+        // This matches the calculation used in the Super Admin report
+        $availableData = \DB::table('stock_movements')
+            ->where('item_id', $product->id)
+            ->whereIn('branch_id', $userBranchIds)
+            ->select(\DB::raw('SUM(CASE WHEN direction = "in" THEN quantity ELSE -quantity END) as available_qty'))
+            ->first();
         
-        $totalQty = 0;
-        foreach ($userBranchIds as $branchId) {
-            $branchIdInt = (int)$branchId;
-            if (isset($manufacturingByBranch[$branchIdInt])) {
-                $totalQty += (float)$manufacturingByBranch[$branchIdInt];
-            }
-        }
+        $mfgQty = $availableData && $availableData->available_qty ? max(0, (float)$availableData->available_qty) : 0;
         
-        return rtrim(rtrim(number_format($totalQty, 3, '.', ''), '0'), '.');
+        return rtrim(rtrim(number_format($mfgQty, 3, '.', ''), '0'), '.');
     }
 
     public function render()
