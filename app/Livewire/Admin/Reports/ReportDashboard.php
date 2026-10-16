@@ -923,6 +923,7 @@ class ReportDashboard extends Component
         // Query: Get available qty per product per branch from stock_movements
         // Available = SUM(production_output IN) - SUM(AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND OUT)
         // This matches the manufacturing dashboard logic
+        // Apply date filters to stock movements
         $availableQtys = DB::table('stock_movements')
             ->join('products', function ($join) {
                 $join->on('stock_movements.item_id', '=', 'products.id')
@@ -933,6 +934,8 @@ class ReportDashboard extends Component
             ->whereIn('products.type', ['finished_product', 'bottle_product'])
             ->whereIn('stock_movements.branch_id', $assignedBranchIds)
             ->whereIn('products.business_id', $assignedBusinessIds)
+            ->when($dateFrom, fn($q) => $q->where('stock_movements.moved_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->where('stock_movements.moved_at', '<=', $dateTo))
             ->select([
                 'stock_movements.item_id as product_id',
                 'stock_movements.branch_id',
