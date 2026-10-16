@@ -58,14 +58,23 @@
                     </div>
                 </div>
 
-                {{-- Social Media Section with Branded Colors --}}
+                {{-- Social Media Section with Branded Colors and Real SVG Icons --}}
                 @php
                     $socialLinks = [
-                        ['name' => 'Facebook', 'url' => $facebookUrl, 'color' => '#1877F2', 'hoverColor' => '#165FE5', 'icon' => 'fab fa-facebook'],
-                        ['name' => 'Telegram', 'url' => $telegramUrl, 'color' => '#0088cc', 'hoverColor' => '#006fa3', 'icon' => 'fab fa-telegram'],
-                        ['name' => 'TikTok', 'url' => $tiktokUrl, 'color' => '#000000', 'hoverColor' => '#333333', 'icon' => 'fab fa-tiktok'],
-                        ['name' => 'YouTube', 'url' => $youtubeUrl, 'color' => '#FF0000', 'hoverColor' => '#cc0000', 'icon' => 'fab fa-youtube'],
-                        ['name' => 'Instagram', 'url' => $instagramUrl, 'color' => '#E4405F', 'hoverColor' => '#d93175', 'icon' => 'fab fa-instagram'],
+                        ['name' => 'Facebook', 'url' => $facebookUrl, 'color' => '#1877F2', 'hoverColor' => '#165FE5', 
+                         'icon' => '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>'],
+                        
+                        ['name' => 'Telegram', 'url' => $telegramUrl, 'color' => '#0088cc', 'hoverColor' => '#006fa3', 
+                         'icon' => '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a11.955 11.955 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.96 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.365-1.373.275-.567-.099-1.614-.321-2.406-.484-.963-.202-1.723-.2-1.773-.855-.025-.427.1-.878.32-1.335C2.122 9.88 5.859 5.054 9.64 5.284c.514.043 1.052.057 1.57.0 1.323-.1 2.692.4 3.692 1.178.527.483 1.15 1.07 1.654 1.915.155.264.599.941.959 1.514.133.199.276.397.422.59z"/></svg>'],
+                        
+                        ['name' => 'TikTok', 'url' => $tiktokUrl, 'color' => '#000000', 'hoverColor' => '#333333', 
+                         'icon' => '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.321 5.562a5.122 5.122 0 0 1-.868-.084c.584-1.746.603-3.513.056-5.397h-3.103v14.132c0 2.695-2.163 4.858-4.858 4.858-2.695 0-4.858-2.163-4.858-4.858 0-2.695 2.163-4.858 4.858-4.858.211 0 .419.013.624.04v3.237a8.125 8.125 0 0 0-.624-.025c-4.381 0-7.942 3.56-7.942 7.942 0 4.381 3.56 7.942 7.942 7.942 4.381 0 7.942-3.56 7.942-7.942V8.697a6.237 6.237 0 0 0 3.887 1.293v-3.124c-.788 0-1.528-.161-2.258-.476z"/></svg>'],
+                        
+                        ['name' => 'YouTube', 'url' => $youtubeUrl, 'color' => '#FF0000', 'hoverColor' => '#cc0000', 
+                         'icon' => '<svg viewBox="0 0 30 30" fill="currentColor"><path d="M14.4848 20C14.4848 20 23.5695 20 25.8229 19.4C27.0917 19.06 28.0459 18.08 28.3808 16.87C29 14.65 29 9.98 29 9.98C29 9.98 29 5.34 28.3808 3.14C28.0459 1.9 27.0917 0.94 25.8229 0.61C23.5695 0 14.4848 0 14.4848 0C14.4848 0 5.42037 0 3.17711 0.61C1.9286 0.94 0.954148 1.9 0.59888 3.14C0 5.34 0 9.98 0 9.98C0 9.98 0 14.65 0.59888 16.87C0.954148 18.08 1.9286 19.06 3.17711 19.4C5.42037 20 14.4848 20 14.4848 20ZM11.8251 14.555L11.8251 5.405L19.5443 9.98L11.8251 14.555Z"/></svg>'],
+                        
+                        ['name' => 'Instagram', 'url' => $instagramUrl, 'color' => '#E4405F', 'hoverColor' => '#d93175', 
+                         'icon' => '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="2.458" y="2.458" width="19.084" height="19.084" rx="4.458" fill="none" stroke="currentColor" stroke-width="1.458"/><circle cx="12" cy="12" r="3.375" fill="none" stroke="currentColor" stroke-width="1.458"/><circle cx="18.206" cy="5.793" r="1.458" fill="currentColor"/></svg>'],
                     ];
                     $activeSocial = array_filter($socialLinks, fn($link) => !empty(trim($link['url'])));
                 @endphp
@@ -83,7 +92,9 @@
                            onmouseover="this.style.background='{{ $social['hoverColor'] }}';this.style.transform='translateY(-4px) scale(1.08)';this.style.boxShadow='0 8px 16px rgba(0,0,0,0.25)';"
                            onmouseout="this.style.background='{{ $social['color'] }}';this.style.transform='translateY(0) scale(1)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';"
                            title="{{ $social['name'] }}">
-                            <i class="{{ $social['icon'] }}" style="color:white;font-size:28px;line-height:1;"></i>
+                            <svg style="width:32px;height:32px;color:white;" viewBox="0 0 24 24" fill="white">
+                                {!! $social['icon'] !!}
+                            </svg>
                         </a>
                         @endforeach
                     </div>
