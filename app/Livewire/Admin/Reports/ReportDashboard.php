@@ -614,7 +614,7 @@ class ReportDashboard extends Component
             }
             
             try {
-                $addedDate = Carbon::parse($meta['manufacturing_added_at'])->toDateString();
+                $addedDate = Carbon::createFromFormat('Y-m-d', $meta['manufacturing_added_at'])->toDateString();
                 
                 // Check if manufacturing_added_at is within the date range
                 $isWithinRange = true;
@@ -629,7 +629,24 @@ class ReportDashboard extends Component
                     continue;  // Not within date range, skip
                 }
             } catch (\Exception $e) {
-                continue;
+                // Fallback: try parsing without format specification
+                try {
+                    $addedDate = Carbon::parse($meta['manufacturing_added_at'])->toDateString();
+                    
+                    $isWithinRange = true;
+                    if ($dateFrom) {
+                        $isWithinRange = $isWithinRange && ($addedDate >= $dateFrom->toDateString());
+                    }
+                    if ($dateTo) {
+                        $isWithinRange = $isWithinRange && ($addedDate <= $dateTo->toDateString());
+                    }
+                    
+                    if (!$isWithinRange) {
+                        continue;
+                    }
+                } catch (\Exception $e2) {
+                    continue;
+                }
             }
             
             // Get the manufactured_by_branch_id to match Bilal's view's branch ownership
