@@ -1965,7 +1965,7 @@ class ManufacturingUserDashboard extends Component
             return 0;
         }
 
-        $bestBalance = 0.0;
+        $totalBalance = 0.0;
 
         foreach ($locations as $locationId) {
             $stockIn = (float) \App\Models\StockMovement::where('location_id', $locationId)
@@ -1983,9 +1983,7 @@ class ManufacturingUserDashboard extends Component
                 ->sum('quantity');
 
             $balance = max(0, $stockIn - $stockOut);
-            if ($balance > $bestBalance) {
-                $bestBalance = $balance;
-            }
+            $totalBalance += $balance;
         }
 
         // Legacy fallback: if no StockMovement records, check metadata
@@ -1994,11 +1992,11 @@ class ManufacturingUserDashboard extends Component
             if ($prod) {
                 $metadata = $prod->metadata ?? [];
                 $mfgQty = (float) ($metadata['manufacturing_quantity'] ?? 0);
-                return max(0, $mfgQty);
+                $totalBalance += $mfgQty;
             }
         }
 
-        return max(0, $bestBalance);
+        return max(0, $totalBalance);
     }
 
     // Get products for selected sell category — stock-aware, per type
