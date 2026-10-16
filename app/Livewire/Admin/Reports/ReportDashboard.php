@@ -597,10 +597,9 @@ class ReportDashboard extends Component
             )
             ->get();
 
-        // For each product+branch, calculate new_mfr_quantity (today's manufacturing)
+        // For each product+branch, calculate new_mfr_quantity (manufacturing within date range)
         // Use last_mfr_quantity from metadata to match Bilal's view (shows last entered qty, not accumulated)
-        // BUT only include products where manufacturing_added_at is TODAY
-        $today = now()->toDateString();
+        // Include products where manufacturing_added_at falls within the date range
         $productMetadata = Product::withoutGlobalScopes()
             ->whereIn('business_id', $businessIds)
             ->get();
@@ -609,15 +608,25 @@ class ReportDashboard extends Component
         foreach ($productMetadata as $product) {
             $meta = $product->metadata ?? [];
             
-            // MUST have manufacturing_added_at set to TODAY
+            // MUST have manufacturing_added_at set
             if (!isset($meta['manufacturing_added_at'])) {
                 continue;
             }
             
             try {
                 $addedDate = Carbon::parse($meta['manufacturing_added_at'])->toDateString();
-                if ($addedDate !== $today) {
-                    continue;  // Not today's manufacturing, skip
+                
+                // Check if manufacturing_added_at is within the date range
+                $isWithinRange = true;
+                if ($dateFrom) {
+                    $isWithinRange = $isWithinRange && ($addedDate >= $dateFrom->toDateString());
+                }
+                if ($dateTo) {
+                    $isWithinRange = $isWithinRange && ($addedDate <= $dateTo->toDateString());
+                }
+                
+                if (!$isWithinRange) {
+                    continue;  // Not within date range, skip
                 }
             } catch (\Exception $e) {
                 continue;
