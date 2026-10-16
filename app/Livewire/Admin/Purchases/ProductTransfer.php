@@ -64,8 +64,8 @@ class ProductTransfer extends Component
     public function transferHistory(): \Illuminate\Support\Collection
     {
         $query = \App\Models\StockTransfer::query()
-            ->where('item_type', 'product')
-            ->whereNull('deleted_at')
+            ->where('stock_transfers.item_type', 'product')
+            ->whereNull('stock_transfers.deleted_at')
             ->join('products', 'stock_transfers.item_id', '=', 'products.id')
             ->join('categories', 'products.category_id', '=', 'categories.id')
             ->leftJoin('locations as from_loc', 'stock_transfers.from_location_id', '=', 'from_loc.id')
@@ -73,7 +73,11 @@ class ProductTransfer extends Component
             ->leftJoin('branches as from_br', 'from_loc.branch_id', '=', 'from_br.id')
             ->leftJoin('branches as to_br', 'to_loc.branch_id', '=', 'to_br.id')
             ->leftJoin('businesses', 'to_br.business_id', '=', 'businesses.id')
-            ->whereNull('products.deleted_at');
+            ->whereNull('products.deleted_at')
+            ->whereNull('from_loc.deleted_at')
+            ->whereNull('to_loc.deleted_at')
+            ->whereNull('from_br.deleted_at')
+            ->whereNull('to_br.deleted_at');
 
         if ($this->searchBranch) {
             $query->where(function($q) {
