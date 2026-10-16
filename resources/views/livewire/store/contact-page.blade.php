@@ -61,11 +61,11 @@
                 {{-- Social Media Section with Branded Colors --}}
                 @php
                     $socialLinks = [
-                        ['name' => 'Facebook', 'url' => $facebookUrl, 'color' => '#1877F2', 'hoverColor' => '#165FE5'],
-                        ['name' => 'Telegram', 'url' => $telegramUrl, 'color' => '#0088cc', 'hoverColor' => '#006fa3'],
-                        ['name' => 'TikTok', 'url' => $tiktokUrl, 'color' => '#000000', 'hoverColor' => '#333333'],
-                        ['name' => 'YouTube', 'url' => $youtubeUrl, 'color' => '#FF0000', 'hoverColor' => '#cc0000'],
-                        ['name' => 'Instagram', 'url' => $instagramUrl, 'color' => '#E4405F', 'hoverColor' => '#d93175'],
+                        ['name' => 'Facebook', 'url' => $facebookUrl, 'color' => '#1877F2', 'hoverColor' => '#165FE5', 'icon' => 'fab fa-facebook'],
+                        ['name' => 'Telegram', 'url' => $telegramUrl, 'color' => '#0088cc', 'hoverColor' => '#006fa3', 'icon' => 'fab fa-telegram'],
+                        ['name' => 'TikTok', 'url' => $tiktokUrl, 'color' => '#000000', 'hoverColor' => '#333333', 'icon' => 'fab fa-tiktok'],
+                        ['name' => 'YouTube', 'url' => $youtubeUrl, 'color' => '#FF0000', 'hoverColor' => '#cc0000', 'icon' => 'fab fa-youtube'],
+                        ['name' => 'Instagram', 'url' => $instagramUrl, 'color' => '#E4405F', 'hoverColor' => '#d93175', 'icon' => 'fab fa-instagram'],
                     ];
                     $activeSocial = array_filter($socialLinks, fn($link) => !empty(trim($link['url'])));
                 @endphp
@@ -83,17 +83,7 @@
                            onmouseover="this.style.background='{{ $social['hoverColor'] }}';this.style.transform='translateY(-4px) scale(1.08)';this.style.boxShadow='0 8px 16px rgba(0,0,0,0.25)';"
                            onmouseout="this.style.background='{{ $social['color'] }}';this.style.transform='translateY(0) scale(1)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';"
                            title="{{ $social['name'] }}">
-                            @if($social['name'] === 'Facebook')
-                                <i class="fab fa-facebook-f" style="color:white;"></i>
-                            @elseif($social['name'] === 'Telegram')
-                                <i class="fab fa-telegram" style="color:white;"></i>
-                            @elseif($social['name'] === 'TikTok')
-                                <i class="fab fa-tiktok" style="color:white;"></i>
-                            @elseif($social['name'] === 'YouTube')
-                                <i class="fab fa-youtube" style="color:white;"></i>
-                            @elseif($social['name'] === 'Instagram')
-                                <i class="fab fa-instagram" style="color:white;"></i>
-                            @endif
+                            <i class="{{ $social['icon'] }}" style="color:white;"></i>
                         </a>
                         @endforeach
                     </div>
