@@ -103,6 +103,37 @@
     </div>
 </section>
 
+{{-- SOCIAL MEDIA --}}
+@php
+    $socialLinks = [
+        ['icon' => '📘', 'url' => $facebookUrl, 'label' => 'Facebook'],
+        ['icon' => '✈️', 'url' => $telegramUrl, 'label' => 'Telegram'],
+        ['icon' => '🎵', 'url' => $tiktokUrl, 'label' => 'TikTok'],
+        ['icon' => '🎬', 'url' => $youtubeUrl, 'label' => 'YouTube'],
+        ['icon' => '📷', 'url' => $instagramUrl, 'label' => 'Instagram'],
+    ];
+    $activeSocial = array_filter($socialLinks, fn($link) => !empty(trim($link['url'])));
+@endphp
+
+@if(!empty($activeSocial))
+<div style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:3rem 1rem;">
+    <div style="max-width:1200px;margin:0 auto;text-align:center;">
+        <h3 style="font-weight:bold;font-size:1.25rem;margin-bottom:2rem;color:#1f2937;">Follow Us</h3>
+        <div style="display:flex;justify-content:center;gap:2rem;flex-wrap:wrap;">
+            @foreach($activeSocial as $social)
+            <a href="{{ $social['url'] }}" target="_blank" rel="noopener noreferrer"
+               style="display:inline-flex;align-items:center;justify-content:center;width:50px;height:50px;background:#4f46e5;color:white;border-radius:50%;text-decoration:none;font-size:1.5rem;transition:all 0.3s ease;hover-background:#4338ca;"
+               onmouseover="this.style.background='#4338ca';this.style.transform='scale(1.1)';"
+               onmouseout="this.style.background='#4f46e5';this.style.transform='scale(1)';"
+               title="{{ $social['label'] }}">
+                {{ $social['icon'] }}
+            </a>
+            @endforeach
+        </div>
+    </div>
+</div>
+@endif
+
 {{-- FOOTER --}}
 @if($ctTagline || $ctFooterDesc)
 <div style="background:#1f2937;color:white;padding:2rem;text-align:center;">
