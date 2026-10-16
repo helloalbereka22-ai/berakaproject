@@ -164,22 +164,29 @@ class ProductTransfer extends Component
     // ── Available stock at source branch for a product ────────────────────
     private function getSourceBalance(int $productId): float
     {
-        if (!$this->srcBranchId) return 0;
+        // Defensive: must have both productId and srcBranchId
+        if (!$this->srcBranchId || !$productId) return 0;
 
-        $locationIds = Location::where('branch_id', $this->srcBranchId)->pluck('id');
-        if ($locationIds->isEmpty()) {
+        // Get locations for THIS specific branch only
+        $locationIds = Location::where('branch_id', $this->srcBranchId)
+            ->pluck('id')
+            ->toArray();
+            
+        if (empty($locationIds)) {
             return 0;
         }
 
         // Calculate balance: all inbound - only deductible outbound types
         // This matches the calculation used everywhere else in the system
-        $stockIn = (float) StockMovement::whereIn('location_id', $locationIds)
+        $stockIn = (float) StockMovement::query()
+            ->whereIn('location_id', $locationIds)
             ->where('item_type', 'product')
             ->where('item_id', $productId)
             ->where('direction', 'in')
             ->sum('quantity');
 
-        $stockOut = (float) StockMovement::whereIn('location_id', $locationIds)
+        $stockOut = (float) StockMovement::query()
+            ->whereIn('location_id', $locationIds)
             ->where('item_type', 'product')
             ->where('item_id', $productId)
             ->where('direction', 'out')
@@ -308,7 +315,8 @@ class ProductTransfer extends Component
     // ── Available qty for view ────────────────────────────────────────────
     public function availableQty(): float
     {
-        if (!$this->trProductId) return 0;
+        // Must have BOTH product AND source branch selected
+        if (!$this->trProductId || !$this->srcBranchId) return 0;
         return $this->getSourceBalance($this->trProductId);
     }
 

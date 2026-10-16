@@ -173,12 +173,12 @@
             </div>
 
             {{-- Available stock + Selling price --}}
-            <div class="space-y-3">
+            <div class="space-y-3" wire:key="available-qty-{{ $trProductId }}-{{ $srcBranchId }}">
                 <div>
                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Available at Source</label>
                     <div class="flex items-center justify-between px-4 py-3 rounded-xl border h-[46px]
-                        {{ $trProductId ? 'bg-slate-800/50 border-emerald-500/20' : 'bg-slate-800/30 border-slate-700/50' }}">
-                        @if($trProductId)
+                        {{ $trProductId && $srcBranchId ? 'bg-slate-800/50 border-emerald-500/20' : 'bg-slate-800/30 border-slate-700/50' }}">
+                        @if($trProductId && $srcBranchId)
                             <div class="flex items-center gap-2">
                                 <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
                                 <span class="text-xs text-slate-400">In stock</span>
