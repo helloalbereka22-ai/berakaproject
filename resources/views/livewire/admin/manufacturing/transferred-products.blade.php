@@ -107,7 +107,8 @@
             <div>
                 <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">From Date</label>
                 <input type="date" 
-                       wire:model.live="dateFrom"
+                       wire:model.lazy="dateFrom"
+                       wire:change="onDateFromChange"
                        class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 outline-none focus:border-indigo-500 transition">
             </div>
 
@@ -115,7 +116,8 @@
             <div>
                 <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">To Date</label>
                 <input type="date" 
-                       wire:model.live="dateTo"
+                       wire:model.lazy="dateTo"
+                       wire:change="onDateToChange"
                        class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 outline-none focus:border-indigo-500 transition">
             </div>
         </div>

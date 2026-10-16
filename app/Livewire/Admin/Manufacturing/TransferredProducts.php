@@ -58,6 +58,16 @@ class TransferredProducts extends Component
         $this->resetPage();
     }
 
+    public function onDateFromChange(): void
+    {
+        $this->resetPage();
+    }
+
+    public function onDateToChange(): void
+    {
+        $this->resetPage();
+    }
+
     #[\Livewire\Attributes\On('refresh')]
     public function refresh(): void
     {
