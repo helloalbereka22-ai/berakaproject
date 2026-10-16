@@ -48,6 +48,16 @@ class TransferredProducts extends Component
         $this->resetPage();
     }
 
+    public function updatingDateFrom(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatingDateTo(): void
+    {
+        $this->resetPage();
+    }
+
     #[Computed]
     public function branchLocations()
     {
@@ -104,12 +114,24 @@ class TransferredProducts extends Component
             ->where('item_type', 'product')
             ->whereIn('location_id', $locationIds);
 
-        // Apply date filters
-        if ($this->dateFrom) {
-            $query->where('moved_at', '>=', $this->dateFrom . ' 00:00:00');
+        // Apply date filters with proper parsing
+        if (!empty($this->dateFrom)) {
+            try {
+                $dateFromObj = \Carbon\Carbon::createFromFormat('Y-m-d', $this->dateFrom)->startOfDay();
+                $query->where('moved_at', '>=', $dateFromObj);
+            } catch (\Exception $e) {
+                // Fallback to string concatenation if parsing fails
+                $query->where('moved_at', '>=', $this->dateFrom . ' 00:00:00');
+            }
         }
-        if ($this->dateTo) {
-            $query->where('moved_at', '<=', $this->dateTo . ' 23:59:59');
+        if (!empty($this->dateTo)) {
+            try {
+                $dateToObj = \Carbon\Carbon::createFromFormat('Y-m-d', $this->dateTo)->endOfDay();
+                $query->where('moved_at', '<=', $dateToObj);
+            } catch (\Exception $e) {
+                // Fallback to string concatenation if parsing fails
+                $query->where('moved_at', '<=', $this->dateTo . ' 23:59:59');
+            }
         }
 
         // Apply location filter
@@ -172,11 +194,21 @@ class TransferredProducts extends Component
             ->where('item_type', 'product')
             ->whereIn('location_id', $locationIds);
 
-        if ($this->dateFrom) {
-            $query->where('moved_at', '>=', $this->dateFrom . ' 00:00:00');
+        if (!empty($this->dateFrom)) {
+            try {
+                $dateFromObj = \Carbon\Carbon::createFromFormat('Y-m-d', $this->dateFrom)->startOfDay();
+                $query->where('moved_at', '>=', $dateFromObj);
+            } catch (\Exception $e) {
+                $query->where('moved_at', '>=', $this->dateFrom . ' 00:00:00');
+            }
         }
-        if ($this->dateTo) {
-            $query->where('moved_at', '<=', $this->dateTo . ' 23:59:59');
+        if (!empty($this->dateTo)) {
+            try {
+                $dateToObj = \Carbon\Carbon::createFromFormat('Y-m-d', $this->dateTo)->endOfDay();
+                $query->where('moved_at', '<=', $dateToObj);
+            } catch (\Exception $e) {
+                $query->where('moved_at', '<=', $this->dateTo . ' 23:59:59');
+            }
         }
         if ($this->selectedLocationId) {
             $query->where('location_id', $this->selectedLocationId);
