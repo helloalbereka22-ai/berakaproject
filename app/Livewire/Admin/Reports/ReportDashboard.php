@@ -551,9 +551,9 @@ class ReportDashboard extends Component
             }
         }
 
-        // Query: Get all production_output movements per product per branch (ALL TIME)
+        // Query: Get all production_output movements per product per branch within date range
         // These provide the base list of products that have been manufactured
-        // The NEW MFR quantity will be filtered by date separately in $newMfrMap
+        // Apply date filters to respect the General Manager's date range selection
         $productionOutputs = DB::table('stock_movements')
             ->join('products', function ($join) {
                 $join->on('stock_movements.item_id', '=', 'products.id')
@@ -569,6 +569,8 @@ class ReportDashboard extends Component
             ->when($branchIds, fn($q) => $q->whereIn('stock_movements.branch_id', $branchIds))
             ->when($this->mfrCategoryId, fn($q) => $q->where('products.category_id', (int) $this->mfrCategoryId))
             ->when($this->mfrItemId, fn($q) => $q->where('products.id', (int) $this->mfrItemId))
+            ->when($dateFrom, fn($q) => $q->where('stock_movements.moved_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->where('stock_movements.moved_at', '<=', $dateTo))
             ->select([
                 'stock_movements.item_id as product_id',
                 'stock_movements.branch_id',
@@ -705,9 +707,12 @@ class ReportDashboard extends Component
             });
 
         // Calculate available quantities per product per branch (production_output in - AVAILABLE_QTY_DEDUCTIBLE_OUTBOUND out)
+        // Apply date filters to respect the General Manager's date range selection
         $availableMap = DB::table('stock_movements')
             ->where('item_type', 'product')
             ->whereIn('stock_movements.item_id', $productionOutputs->pluck('product_id')->unique()->toArray())
+            ->when($dateFrom, fn($q) => $q->where('stock_movements.moved_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->where('stock_movements.moved_at', '<=', $dateTo))
             ->select([
                 'item_id as product_id',
                 'branch_id',
