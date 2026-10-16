@@ -42,6 +42,7 @@
             
             
             <div>
+                
                 <div style="background:linear-gradient(135deg, #312e81, #1e3a8a);color:white;border-radius:1rem;padding:2rem;margin-bottom:2rem;">
                     <h3 style="font-weight:bold;margin-bottom:1.5rem;"><?php echo e($ctInfoTitle); ?></h3>
                     <div style="space:1rem;">
@@ -56,6 +57,39 @@
                         <?php endif; ?>
                     </div>
                 </div>
+
+                
+                <?php
+                    $socialLinks = [
+                        ['name' => 'Facebook', 'url' => $facebookUrl, 'color' => '#1877F2', 'hoverColor' => '#165FE5', 'icon' => 'fab fa-facebook'],
+                        ['name' => 'Telegram', 'url' => $telegramUrl, 'color' => '#0088cc', 'hoverColor' => '#006fa3', 'icon' => 'fab fa-telegram'],
+                        ['name' => 'TikTok', 'url' => $tiktokUrl, 'color' => '#000000', 'hoverColor' => '#333333', 'icon' => 'fab fa-tiktok'],
+                        ['name' => 'YouTube', 'url' => $youtubeUrl, 'color' => '#FF0000', 'hoverColor' => '#cc0000', 'icon' => 'fab fa-youtube'],
+                        ['name' => 'Instagram', 'url' => $instagramUrl, 'color' => '#E4405F', 'hoverColor' => '#d93175', 'icon' => 'fab fa-instagram'],
+                    ];
+                    $activeSocial = array_filter($socialLinks, fn($link) => !empty(trim($link['url'])));
+                ?>
+
+                <?php if(!empty($activeSocial)): ?>
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:1rem;padding:2rem;margin-bottom:2rem;">
+                    <div style="text-align:center;margin-bottom:1.5rem;">
+                        <h3 style="font-weight:700;font-size:1.25rem;margin:0 0 0.5rem 0;color:#111827;">Connect With Us</h3>
+                        <p style="font-size:0.85rem;color:#6b7280;margin:0;">Follow us on social media for updates and news</p>
+                    </div>
+                    <div style="display:flex;justify-content:center;gap:1rem;flex-wrap:wrap;">
+                        <?php $__currentLoopData = $activeSocial; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $social): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                        <a href="<?php echo e($social['url']); ?>" target="_blank" rel="noopener noreferrer"
+                           style="display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;background:<?php echo e($social['color']); ?>;border-radius:12px;text-decoration:none;transition:all 0.3s cubic-bezier(0.4, 0, 0.2, 1);box-shadow:0 2px 8px rgba(0,0,0,0.15);font-size:24px;"
+                           onmouseover="this.style.background='<?php echo e($social['hoverColor']); ?>';this.style.transform='translateY(-4px) scale(1.08)';this.style.boxShadow='0 8px 16px rgba(0,0,0,0.25)';"
+                           onmouseout="this.style.background='<?php echo e($social['color']); ?>';this.style.transform='translateY(0) scale(1)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';"
+                           title="<?php echo e($social['name']); ?>">
+                            <i class="<?php echo e($social['icon']); ?>" style="color:white;"></i>
+                        </a>
+                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
                 <div style="background:white;border:1px solid #e5e7eb;border-radius:1rem;padding:1.5rem;margin-bottom:2rem;">
                     <h3 style="font-weight:bold;margin-bottom:0.5rem;color:#000;"><?php echo e($ctGitTitle); ?></h3>
                     <p style="color:#666;font-size:0.95rem;"><?php echo e($ctGitDesc); ?></p>

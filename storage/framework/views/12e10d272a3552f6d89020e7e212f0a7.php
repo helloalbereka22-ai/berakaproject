@@ -30,6 +30,32 @@
             <p class="text-3xl font-bold text-white mt-2"><?php echo e(number_format($summary['total_value'], 2)); ?></p>
         </div>
     </div>
+    
+    
+    <?php if($tab === 'movements' || $tab === 'transfers'): ?>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">From</label>
+            <input wire:model.live.debounce.300ms="dateFrom" type="date" 
+                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 cursor-pointer"
+                style="color-scheme: dark;">
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">To</label>
+            <input wire:model.live.debounce.300ms="dateTo" type="date" 
+                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 cursor-pointer"
+                style="color-scheme: dark;">
+        </div>
+        <?php if($dateFrom || $dateTo): ?>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex items-end">
+            <button wire:click="$set('dateFrom', ''); $set('dateTo', '')"
+                class="w-full px-4 py-2 rounded-xl text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                Clear Dates
+            </button>
+        </div>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
     <?php else: ?>
         
     <?php endif; ?>
@@ -170,7 +196,7 @@
     <?php endif; ?>
 
     
-    <?php if($tab === 'movements'): ?>
+    <?php if($tab === 'movements' || $tab === 'transfers'): ?>
     <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full text-sm">

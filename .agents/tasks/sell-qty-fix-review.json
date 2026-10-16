@@ -1,0 +1,16 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "id": "report-subquery-scoping",
+      "title": "Report subquery scoping",
+      "description": "The complex subquery in $availableMap groups by item_id and branch_id but the subqueries join back to the outer stock_movements table by these same columns. Verify that the grouping produces one row per product-branch combination and doesn't produce duplicates when multiple locations exist under a single branch."
+    },
+    {
+      "id": "best-location-balance",
+      "title": "calculateBranchAvailableQty() picks best location balance",
+      "description": "The method iterates through all locations assigned to the user's branch(es) and returns the highest balance, not the sum. In a multi-location branch, if Location A has 120 units and Location B has 50 units, the method returns 120. Confirm this is intentional for the Sell tab (i.e., the user can sell from the best-stocked location) and not a logic gap that should sum across all branch locations."
+    }
+  ],
+  "reviewDoc": "c:\\xammpp82\\htdocs\\albarekaaaaaa\\.agents\\tasks\\sell-qty-fix-review.md"
+}

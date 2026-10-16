@@ -79,11 +79,11 @@
                     <div style="display:flex;justify-content:center;gap:1rem;flex-wrap:wrap;">
                         @foreach($activeSocial as $social)
                         <a href="{{ $social['url'] }}" target="_blank" rel="noopener noreferrer"
-                           style="display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;background:{{ $social['color'] }};border-radius:12px;text-decoration:none;transition:all 0.3s cubic-bezier(0.4, 0, 0.2, 1);box-shadow:0 2px 8px rgba(0,0,0,0.15);font-size:24px;"
+                           style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:{{ $social['color'] }};border-radius:12px;text-decoration:none;transition:all 0.3s cubic-bezier(0.4, 0, 0.2, 1);box-shadow:0 2px 8px rgba(0,0,0,0.15);"
                            onmouseover="this.style.background='{{ $social['hoverColor'] }}';this.style.transform='translateY(-4px) scale(1.08)';this.style.boxShadow='0 8px 16px rgba(0,0,0,0.25)';"
                            onmouseout="this.style.background='{{ $social['color'] }}';this.style.transform='translateY(0) scale(1)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';"
                            title="{{ $social['name'] }}">
-                            <i class="{{ $social['icon'] }}" style="color:white;"></i>
+                            <i class="{{ $social['icon'] }}" style="color:white;font-size:28px;line-height:1;"></i>
                         </a>
                         @endforeach
                     </div>
