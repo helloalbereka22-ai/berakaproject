@@ -61,11 +61,20 @@
                 
                 <?php
                     $socialLinks = [
-                        ['name' => 'Facebook', 'url' => $facebookUrl, 'color' => '#1877F2', 'hoverColor' => '#165FE5', 'icon' => 'fab fa-facebook'],
-                        ['name' => 'Telegram', 'url' => $telegramUrl, 'color' => '#0088cc', 'hoverColor' => '#006fa3', 'icon' => 'fab fa-telegram'],
-                        ['name' => 'TikTok', 'url' => $tiktokUrl, 'color' => '#000000', 'hoverColor' => '#333333', 'icon' => 'fab fa-tiktok'],
-                        ['name' => 'YouTube', 'url' => $youtubeUrl, 'color' => '#FF0000', 'hoverColor' => '#cc0000', 'icon' => 'fab fa-youtube'],
-                        ['name' => 'Instagram', 'url' => $instagramUrl, 'color' => '#E4405F', 'hoverColor' => '#d93175', 'icon' => 'fab fa-instagram'],
+                        ['name' => 'Facebook', 'url' => $facebookUrl, 'color' => '#1877F2', 'hoverColor' => '#165FE5', 
+                         'icon' => '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>'],
+                        
+                        ['name' => 'Telegram', 'url' => $telegramUrl, 'color' => '#0088cc', 'hoverColor' => '#006fa3', 
+                         'icon' => '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8.287 5.906q-1.168.486-4.666 2.01-.567.225-.595.442c-.03.243.275.339.69.47l.175.055c.408.133.958.288 1.243.294q.39.01.868-.32 3.269-2.206 3.374-2.23c.05-.012.12-.026.166.016s.042.12.037.141c-.03.129-1.227 1.241-1.846 1.817-.193.18-.33.307-.358.336a8 8 0 0 1-.188.186c-.38.366-.664.64.015 1.088.327.216.589.393.85.571.284.194.568.387.936.629q.14.092.27.187c.331.236.63.448.997.414.214-.02.435-.22.547-.82.265-1.417.786-4.486.906-5.751a1.4 1.4 0 0 0-.013-.315.34.34 0 0 0-.114-.217.53.53 0 0 0-.31-.093c-.3.005-.763.166-2.984 1.09"/></svg>'],
+                        
+                        ['name' => 'TikTok', 'url' => $tiktokUrl, 'color' => '#000000', 'hoverColor' => '#333333', 
+                         'icon' => '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.321 5.562a5.122 5.122 0 0 1-.868-.084c.584-1.746.603-3.513.056-5.397h-3.103v14.132c0 2.695-2.163 4.858-4.858 4.858-2.695 0-4.858-2.163-4.858-4.858 0-2.695 2.163-4.858 4.858-4.858.211 0 .419.013.624.04v3.237a8.125 8.125 0 0 0-.624-.025c-4.381 0-7.942 3.56-7.942 7.942 0 4.381 3.56 7.942 7.942 7.942 4.381 0 7.942-3.56 7.942-7.942V8.697a6.237 6.237 0 0 0 3.887 1.293v-3.124c-.788 0-1.528-.161-2.258-.476z"/></svg>'],
+                        
+                        ['name' => 'YouTube', 'url' => $youtubeUrl, 'color' => '#FF0000', 'hoverColor' => '#cc0000', 
+                         'icon' => '<svg viewBox="0 0 30 30" fill="currentColor"><path d="M14.4848 20C14.4848 20 23.5695 20 25.8229 19.4C27.0917 19.06 28.0459 18.08 28.3808 16.87C29 14.65 29 9.98 29 9.98C29 9.98 29 5.34 28.3808 3.14C28.0459 1.9 27.0917 0.94 25.8229 0.61C23.5695 0 14.4848 0 14.4848 0C14.4848 0 5.42037 0 3.17711 0.61C1.9286 0.94 0.954148 1.9 0.59888 3.14C0 5.34 0 9.98 0 9.98C0 9.98 0 14.65 0.59888 16.87C0.954148 18.08 1.9286 19.06 3.17711 19.4C5.42037 20 14.4848 20 14.4848 20ZM11.8251 14.555L11.8251 5.405L19.5443 9.98L11.8251 14.555Z"/></svg>'],
+                        
+                        ['name' => 'Instagram', 'url' => $instagramUrl, 'color' => '#E4405F', 'hoverColor' => '#d93175', 
+                         'icon' => '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="2.458" y="2.458" width="19.084" height="19.084" rx="4.458" fill="none" stroke="currentColor" stroke-width="1.458"/><circle cx="12" cy="12" r="3.375" fill="none" stroke="currentColor" stroke-width="1.458"/><circle cx="18.206" cy="5.793" r="1.458" fill="currentColor"/></svg>'],
                     ];
                     $activeSocial = array_filter($socialLinks, fn($link) => !empty(trim($link['url'])));
                 ?>
@@ -79,11 +88,14 @@
                     <div style="display:flex;justify-content:center;gap:1rem;flex-wrap:wrap;">
                         <?php $__currentLoopData = $activeSocial; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $social): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                         <a href="<?php echo e($social['url']); ?>" target="_blank" rel="noopener noreferrer"
-                           style="display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;background:<?php echo e($social['color']); ?>;border-radius:12px;text-decoration:none;transition:all 0.3s cubic-bezier(0.4, 0, 0.2, 1);box-shadow:0 2px 8px rgba(0,0,0,0.15);font-size:24px;"
+                           style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:<?php echo e($social['color']); ?>;border-radius:12px;text-decoration:none;transition:all 0.3s cubic-bezier(0.4, 0, 0.2, 1);box-shadow:0 2px 8px rgba(0,0,0,0.15);"
                            onmouseover="this.style.background='<?php echo e($social['hoverColor']); ?>';this.style.transform='translateY(-4px) scale(1.08)';this.style.boxShadow='0 8px 16px rgba(0,0,0,0.25)';"
                            onmouseout="this.style.background='<?php echo e($social['color']); ?>';this.style.transform='translateY(0) scale(1)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';"
                            title="<?php echo e($social['name']); ?>">
-                            <i class="<?php echo e($social['icon']); ?>" style="color:white;"></i>
+                            <svg style="width:32px;height:32px;color:white;" viewBox="0 0 24 24" fill="white">
+                                <?php echo $social['icon']; ?>
+
+                            </svg>
                         </a>
                         <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                     </div>

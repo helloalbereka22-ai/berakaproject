@@ -21,10 +21,6 @@ class TransferredProducts extends Component
     // Filters
     public string $dateFrom = '';
     public string $dateTo = '';
-    
-    // Data properties (instead of #[Computed])
-    public $transferredProductsData = null;
-    public $summaryData = null;
 
     public function mount(): void
     {
@@ -238,13 +234,9 @@ class TransferredProducts extends Component
 
     public function render()
     {
-        // Recompute transferred products data on every render
-        $this->transferredProductsData = $this->getTransferredProducts();
-        $this->summaryData = $this->getSummary();
-        
         return view('livewire.admin.manufacturing.transferred-products', [
-            'transferredProducts' => $this->transferredProductsData,
-            'summary' => $this->summaryData,
+            'transferredProducts' => $this->getTransferredProducts(),
+            'summary' => $this->getSummary(),
         ])
             ->title('Transferred Products');
     }

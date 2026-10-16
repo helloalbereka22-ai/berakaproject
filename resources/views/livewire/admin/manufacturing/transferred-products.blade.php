@@ -9,7 +9,7 @@
     </div>
 
     {{-- Summary Cards --}}
-    @php $stats = $this->summaryData; @endphp
+    @php $stats = $summary; @endphp
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {{-- Total Transfers --}}
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 relative overflow-hidden">
@@ -137,7 +137,7 @@
             <h3 class="text-sm font-bold text-white uppercase tracking-wide">Transfer History</h3>
         </div>
 
-        @if($this->transferredProductsData->isEmpty())
+        @if($transferredProducts->isEmpty())
             <div class="px-5 py-12 text-center">
                 <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-800/50 mb-4">
                     <svg class="w-8 h-8 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -163,7 +163,7 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-800/50">
-                        @foreach($this->transferredProductsData as $transfer)
+                        @foreach($transferredProducts as $transfer)
                         <tr class="hover:bg-slate-800/20 transition">
                             <td class="px-5 py-4 text-sm text-slate-300">
                                 {{ $transfer->moved_at?->format('M d, Y') }}<br>
@@ -207,7 +207,7 @@
 
             {{-- Pagination --}}
             <div class="px-5 py-4 border-t border-slate-800/80">
-                {{ $this->transferredProductsData->links() }}
+                {{ $transferredProducts->links() }}
             </div>
         @endif
     </div>
