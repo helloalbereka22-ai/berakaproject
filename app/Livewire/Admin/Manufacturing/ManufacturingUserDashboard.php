@@ -1987,7 +1987,7 @@ class ManufacturingUserDashboard extends Component
         }
 
         // Legacy fallback: if no StockMovement records, check metadata
-        if ($bestBalance == 0) {
+        if ($totalBalance == 0) {
             $prod = \App\Models\Product::withoutGlobalScopes()->find($product->id);
             if ($prod) {
                 $metadata = $prod->metadata ?? [];
