@@ -64,39 +64,14 @@ class ProductTransfer extends Component
     public function transferHistory(): \Illuminate\Support\Collection
     {
         $query = \App\Models\StockTransfer::query()
-            ->with('fromLocation.branch.business', 'toLocation.branch.business')
             ->where('item_type', 'product')
             ->whereNull('deleted_at')
             ->join('products', 'stock_transfers.item_id', '=', 'products.id')
             ->join('categories', 'products.category_id', '=', 'categories.id')
-            ->leftJoinSub(
-                \App\Models\Location::select('id', 'branch_id'),
-                'from_loc',
-                'stock_transfers.from_location_id',
-                '=',
-                'from_loc.id'
-            )
-            ->leftJoinSub(
-                \App\Models\Location::select('id', 'branch_id'),
-                'to_loc',
-                'stock_transfers.to_location_id',
-                '=',
-                'to_loc.id'
-            )
-            ->leftJoinSub(
-                \App\Models\Branch::select('id', 'name as from_branch_name'),
-                'from_br',
-                'from_loc.branch_id',
-                '=',
-                'from_br.id'
-            )
-            ->leftJoinSub(
-                \App\Models\Branch::select('id', 'name as to_branch_name', 'business_id'),
-                'to_br',
-                'to_loc.branch_id',
-                '=',
-                'to_br.id'
-            )
+            ->leftJoin('locations as from_loc', 'stock_transfers.from_location_id', '=', 'from_loc.id')
+            ->leftJoin('locations as to_loc', 'stock_transfers.to_location_id', '=', 'to_loc.id')
+            ->leftJoin('branches as from_br', 'from_loc.branch_id', '=', 'from_br.id')
+            ->leftJoin('branches as to_br', 'to_loc.branch_id', '=', 'to_br.id')
             ->leftJoin('businesses', 'to_br.business_id', '=', 'businesses.id')
             ->whereNull('products.deleted_at');
 
