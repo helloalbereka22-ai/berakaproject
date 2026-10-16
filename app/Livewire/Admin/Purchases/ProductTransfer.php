@@ -65,7 +65,6 @@ class ProductTransfer extends Component
     {
         $query = \App\Models\StockTransfer::query()
             ->where('stock_transfers.item_type', 'product')
-            ->whereNull('stock_transfers.deleted_at')
             ->join('products', 'stock_transfers.item_id', '=', 'products.id')
             ->join('categories', 'products.category_id', '=', 'categories.id')
             ->leftJoin('locations as from_loc', 'stock_transfers.from_location_id', '=', 'from_loc.id')
