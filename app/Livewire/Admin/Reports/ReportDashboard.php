@@ -1085,6 +1085,7 @@ class ReportDashboard extends Component
     private function getStockChangesReport(array $filters): array
     {
         // Get all stock movements ordered by date (descending) - SORT AT DATABASE LEVEL
+        // Exclude internal metadata conversion entries (they're not real business actions)
         $movements = DB::table('stock_movements')
             ->leftJoin('products', function($join) {
                 $join->on('stock_movements.item_id', '=', 'products.id')
@@ -1094,6 +1095,14 @@ class ReportDashboard extends Component
             ->leftJoin('branches', 'stock_movements.branch_id', '=', 'branches.id')
             ->leftJoin('users', 'stock_movements.created_by', '=', 'users.id')
             ->where('stock_movements.item_type', 'product')
+            ->where(function($q) {
+                // Exclude production_output entries that are just metadata conversions
+                $q->where('stock_movements.movement_type', '<>', 'production_output')
+                  ->orWhere(function($q2) {
+                      $q2->where('stock_movements.movement_type', '=', 'production_output')
+                         ->where('stock_movements.notes', 'NOT LIKE', '%Converted from manufacturing_quantity%');
+                  });
+            })
             ->when($filters['business_id'] ?? null, fn($q, $v) =>
                 $q->where('stock_movements.business_id', $v))
             ->when($filters['branch_id'] ?? null, fn($q, $v) =>

@@ -9,6 +9,7 @@ use App\Models\Location;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\StockMovement;
+use App\Models\StockTransfer;
 use App\Services\InventoryService;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
@@ -62,19 +63,47 @@ class ProductTransfer extends Component
     #[Computed]
     public function transferHistory(): \Illuminate\Support\Collection
     {
-        $query = StockMovement::where('stock_movements.reference_type', 'StockTransfer')
-            ->where('stock_movements.direction', 'in')
-            ->join('products',   'stock_movements.item_id',      '=', 'products.id')
-            ->join('categories', 'products.category_id',         '=', 'categories.id')
-            ->join('locations',  'stock_movements.location_id',  '=', 'locations.id')
-            ->join('branches as dest_branches', 'locations.branch_id', '=', 'dest_branches.id')
-            ->join('businesses', 'dest_branches.business_id',    '=', 'businesses.id')
+        $query = \App\Models\StockTransfer::query()
+            ->with('fromLocation.branch.business', 'toLocation.branch.business')
+            ->where('item_type', 'product')
+            ->whereNull('deleted_at')
+            ->join('products', 'stock_transfers.item_id', '=', 'products.id')
+            ->join('categories', 'products.category_id', '=', 'categories.id')
+            ->leftJoinSub(
+                \App\Models\Location::select('id', 'branch_id'),
+                'from_loc',
+                'stock_transfers.from_location_id',
+                '=',
+                'from_loc.id'
+            )
+            ->leftJoinSub(
+                \App\Models\Location::select('id', 'branch_id'),
+                'to_loc',
+                'stock_transfers.to_location_id',
+                '=',
+                'to_loc.id'
+            )
+            ->leftJoinSub(
+                \App\Models\Branch::select('id', 'name as from_branch_name'),
+                'from_br',
+                'from_loc.branch_id',
+                '=',
+                'from_br.id'
+            )
+            ->leftJoinSub(
+                \App\Models\Branch::select('id', 'name as to_branch_name', 'business_id'),
+                'to_br',
+                'to_loc.branch_id',
+                '=',
+                'to_br.id'
+            )
+            ->leftJoin('businesses', 'to_br.business_id', '=', 'businesses.id')
             ->whereNull('products.deleted_at');
 
         if ($this->searchBranch) {
             $query->where(function($q) {
-                $q->where('dest_branches.name', 'like', '%' . $this->searchBranch . '%')
-                  ->orWhere('stock_movements.notes', 'like', '%from_branch:' . $this->searchBranch . '%');
+                $q->where('from_br.name', 'like', '%' . $this->searchBranch . '%')
+                  ->orWhere('to_br.name', 'like', '%' . $this->searchBranch . '%');
             });
         }
         if ($this->searchCategory) {
@@ -85,34 +114,28 @@ class ProductTransfer extends Component
         }
 
         return $query->select(
-                'stock_movements.id',
-                'stock_movements.quantity',
-                'stock_movements.notes',
-                'stock_movements.moved_at',
+                'stock_transfers.id',
+                'stock_transfers.quantity',
+                'stock_transfers.notes',
+                'stock_transfers.completed_at as moved_at',
                 'products.name as product_name',
                 'categories.name as category_name',
-                'dest_branches.name as to_branch',
+                'from_br.name as from_branch',
+                'to_br.name as to_branch',
                 'businesses.name as to_business',
             )
-            ->orderByDesc('stock_movements.moved_at')
+            ->orderByDesc('stock_transfers.completed_at')
             ->limit(200)
             ->get()
             ->map(function ($row) {
-                // Extract from_branch from notes
-                $fromBranch = '—';
-                if ($row->notes && str_contains($row->notes, 'from_branch:')) {
-                    preg_match('/from_branch:([^|]+)/', $row->notes, $m);
-                    $fromBranch = trim($m[1] ?? '—');
-                }
-                // Extract user notes
+                // Extract user notes from the notes field (notes format: "from_branch:X|to_branch:Y|notes:Z")
                 $userNotes = '';
                 if ($row->notes && str_contains($row->notes, '|notes:')) {
                     $userNotes = trim(substr($row->notes, strpos($row->notes, '|notes:') + 7));
-                } elseif ($row->notes && !str_contains($row->notes, 'from_branch:')) {
+                } elseif ($row->notes) {
                     $userNotes = $row->notes;
                 }
-                $row->from_branch = $fromBranch;
-                $row->user_notes  = $userNotes;
+                $row->user_notes = $userNotes;
                 return $row;
             });
     }
