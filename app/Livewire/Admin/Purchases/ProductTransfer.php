@@ -171,11 +171,12 @@ class ProductTransfer extends Component
             return 0;
         }
 
+        // Calculate balance: all inbound - only deductible outbound types
+        // This matches the calculation used everywhere else in the system
         $stockIn = (float) StockMovement::whereIn('location_id', $locationIds)
             ->where('item_type', 'product')
             ->where('item_id', $productId)
             ->where('direction', 'in')
-            ->whereNotIn('movement_type', StockMovement::AVAILABLE_QTY_EXCLUDED_INBOUND)
             ->sum('quantity');
 
         $stockOut = (float) StockMovement::whereIn('location_id', $locationIds)
