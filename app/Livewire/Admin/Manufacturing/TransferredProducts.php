@@ -21,6 +21,10 @@ class TransferredProducts extends Component
     // Filters
     public string $dateFrom = '';
     public string $dateTo = '';
+    
+    // Data properties (instead of #[Computed])
+    public $transferredProductsData = null;
+    public $summaryData = null;
 
     public function mount(): void
     {
@@ -58,6 +62,12 @@ class TransferredProducts extends Component
         $this->resetPage();
     }
 
+    #[\Livewire\Attributes\On('refresh')]
+    public function refresh(): void
+    {
+        // Trigger recompute of computed properties
+    }
+
     #[Computed]
     public function branchLocations()
     {
@@ -80,8 +90,7 @@ class TransferredProducts extends Component
             ->get();
     }
 
-    #[Computed]
-    public function transferredProducts()
+    private function getTransferredProducts()
     {
         $user = auth()->user();
         
@@ -154,8 +163,7 @@ class TransferredProducts extends Component
         return $query->orderByDesc('moved_at')->paginate(25);
     }
 
-    #[Computed]
-    public function summary(): array
+    private function getSummary(): array
     {
         $user = auth()->user();
         
@@ -230,7 +238,14 @@ class TransferredProducts extends Component
 
     public function render()
     {
-        return view('livewire.admin.manufacturing.transferred-products')
+        // Recompute transferred products data on every render
+        $this->transferredProductsData = $this->getTransferredProducts();
+        $this->summaryData = $this->getSummary();
+        
+        return view('livewire.admin.manufacturing.transferred-products', [
+            'transferredProducts' => $this->transferredProductsData,
+            'summary' => $this->summaryData,
+        ])
             ->title('Transferred Products');
     }
 }
