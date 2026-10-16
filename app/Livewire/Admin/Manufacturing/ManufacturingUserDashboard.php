@@ -2478,15 +2478,9 @@ class ManufacturingUserDashboard extends Component
         $user = auth()->user();
         $userBranchIds = $user->assignedBranchIds();
         
-        // Calculate actual available stock from stock_movements
-        // This matches the calculation used in the Super Admin report
-        $availableData = \DB::table('stock_movements')
-            ->where('item_id', $product->id)
-            ->whereIn('branch_id', $userBranchIds)
-            ->select(\DB::raw('SUM(CASE WHEN direction = "in" THEN quantity ELSE -quantity END) as available_qty'))
-            ->first();
-        
-        $mfgQty = $availableData && $availableData->available_qty ? max(0, (float)$availableData->available_qty) : 0;
+        // Use the same calculation as calculateBranchAvailableQty
+        // This ensures consistency between manufacturing list and sell tab
+        $mfgQty = $this->calculateBranchAvailableQty($product, $userBranchIds);
         
         return rtrim(rtrim(number_format($mfgQty, 3, '.', ''), '0'), '.');
     }
